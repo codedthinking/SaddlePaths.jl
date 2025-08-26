@@ -27,23 +27,24 @@ Pkg.add("SaddlePaths")
 ```julia
 using SaddlePaths
 
-# Define a simple model
+# Define a model with automatic steady state solving
 @model begin
-  𝒹k = α*k - c
-  𝒹c = β*(α*k - c) - δ*c
+  # Dynamic equations
+  𝒹k = k^α - c - δ*k
+  @costate 𝒹c = c*(ρ + δ - α*k^(α-1))
+  
+  # Steady state conditions (solved automatically)
+  0 = k_ss^α - c_ss - δ*k_ss
+  0 = ρ + δ - α*k_ss^(α-1)
 end
 
-# Specify steady states
-k_ss(α,β,δ) = α/δ
-c_ss(α,β,δ) = α*k_ss(α,β,δ)
-
 # Compile and solve
-M = compile_model(@locals)
-A = analyze(M; θ=(α=0.3, β=0.99, δ=0.1))
-π = solve_policy(M; θ=(α=0.3, β=0.99, δ=0.1))
+M = compile_model()
+ss = solve_steady_state(M; θ=(α=0.36, δ=0.1, ρ=0.04))
+π = solve_policy(M; θ=(α=0.36, δ=0.1, ρ=0.04))
 
 # Simulate
-traj = simulate(M, π; θ=(α=0.3, β=0.99, δ=0.1), k0=0.5, T=100.0)
+traj = simulate(M, π; θ=(α=0.36, δ=0.1, ρ=0.04), k0=0.5, T=100.0)
 ```
 
 ## Documentation

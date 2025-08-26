@@ -5,10 +5,11 @@
 SaddlePaths.jl is a Julia package for solving saddle-path problems in continuous-time macroeconomic models using stable manifold methods. The package provides:
 
 1. An ergonomic DSL for model specification using Unicode notation
-2. Symbolic differentiation and code generation
-3. Steady state analysis and stability checking
-4. Policy function approximation via Chebyshev/Smolyak methods
-5. Simulation capabilities
+2. Automatic steady state solving from symbolic equations
+3. Explicit co-state variable support via `@costate` macro
+4. Symbolic differentiation and code generation
+5. Policy function approximation via Chebyshev/Smolyak methods
+6. Simulation capabilities
 
 ## Package Structure
 
@@ -31,19 +32,22 @@ SaddlePaths.jl/
 
 The package will be implemented incrementally with the following modules:
 
-1. **dsl.jl**: `@model` macro for DSL parsing
-2. **parser.jl**: Unicode parsing and symbol classification
+1. **dsl.jl**: `@model` and `@costate` macros for DSL parsing
+2. **parser.jl**: Unicode parsing, symbol classification, equation type detection
 3. **symbolic_backend.jl**: Symbolics.jl/ModelingToolkit.jl integration
-4. **steady_state.jl**: Steady state API and stability analysis
-5. **bases/** : Chebyshev and Smolyak basis functions
-6. **policy.jl**: Collocation-based policy solver
-7. **simulate.jl**: ODE integration using computed policies
+4. **steady_state.jl**: Automatic steady state solver for `0 = ...` equations
+5. **stability.jl**: Eigenvalue analysis and stability checking
+6. **bases/** : Chebyshev and Smolyak basis functions
+7. **policy.jl**: Stable manifold solver via collocation
+8. **simulate.jl**: ODE integration using computed policies
 
 ## DSL Design
 
 - State variables: Declared with `𝒹` prefix (e.g., `𝒹k = ...`)
+- Co-state variables: Declared with `@costate 𝒹c = ...` 
 - Parameters: First character is Greek (e.g., `α`, `β`, `δ`)
-- Control variables: Latin identifiers not declared as states
+- Steady state equations: Use `0 = ...` to have system solve for steady state
+- Auxiliary variables: Latin identifiers in algebraic equations
 
 ## Key Algorithms
 

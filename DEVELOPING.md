@@ -1,296 +1,284 @@
-Here’s a focused design for a Julia package that lets you declare continuous-time macro models with a Unicode DSL, generate symbolic/numeric derivatives, analyze steady states, and compute stable-manifold policy functions $c(k)$ via Chebyshev + Smolyak. I’ll call it **StableManifolds.jl** (working name).
+# SaddlePaths.jl Design Document
 
-# 1) Goals & scope
+## 1. Goals & Scope
 
-* **Ergonomic DSL**: `@model …` with Unicode (𝒹 for time derivative; Greek letters as parameters).
-* **Symbolic core**: build a symbolic vector field $\dot{x}=f(\theta,x)$ with $x=(k,c)$, generate Jacobians/Hessians, and JIT numerical functions. Use Symbolics/ModelingToolkit for correctness and speed. ([docs.sciml.ai][1])
-* **Steady state plumbing**: accept user-provided $k_{ss}(\theta)$, $c_{ss}(\theta)$; optionally derive and check stability from Jacobian at SS. ([docs.sciml.ai][2])
-* **Stable manifold solver**: approximate $c(k)$ solving
+* **Ergonomic DSL**: `@model` macro with Unicode notation (𝒹 for time derivatives, Greek letters as parameters)
+* **Symbolic core**: Build symbolic vector field $\dot{x}=f(\theta,x)$ with $x=(k,c)$ where $k$ are states and $c$ are co-states. Generate Jacobians/Hessians and JIT numerical functions using Symbolics/ModelingToolkit
+* **Automatic steady state solving**: When equations use `0 =` instead of `𝒹x =`, solve for steady state symbolically/numerically
+* **Stable manifold solver**: Approximate co-state policy $c(k)$ solving the HJB condition:
+  $$\nabla c(k) \cdot \dot{k}(\theta,k,c(k)) = \dot{c}(\theta,k,c(k)), \quad c(k_{ss})=c_{ss}$$
+  using Chebyshev bases and Smolyak sparse grids
+* **Simulation**: Integrate $k'(t)=\dot{k}(\theta,k,c(k))$ and recover $c(t)=c(k(t))$ using DifferentialEquations.jl
 
-  $$
-  \nabla c(k)\, k\dot{}(\theta,k,c(k)) \;=\; c\dot{}(\theta,k,c(k)),
-  \quad c(k_{ss})=c_{ss},
-  $$
+## 2. Front-End DSL
 
-  with Chebyshev bases and Smolyak sparse grids in $\dim(k)>1$. Prefer SpectralKit.jl or ChebyshevApprox.jl; use SparseGrids/DistributedSparseGrids for nodes when helpful. ([Julia Packages][3], [GitHub][4], [The Open Journal][5])
-* **Simulation**: integrate $k'(t)=k\dot{}(\theta,k,c(k))$ and recover $c(t)=c(k(t))$ using DifferentialEquations.jl.
-* **Unicode-friendly**: first rune Greek ⇒ parameter; Latin ⇒ variable; “𝒹x” ⇒ state variable $x$ with ODE.
-
-# 2) Front-end DSL
-
-### 2.1 Minimal user API
+### 2.1 Basic API
 
 ```julia
 @model begin
+  # States (automatically detected by 𝒹 prefix)
   𝒹k = α*k - c
-  𝒹c = β*(α*k - c) - δ*c
+  
+  # Co-states must be explicitly flagged
+  @costate 𝒹c = β*(α*k - c) - δ*c
 end
 
-k_ss(α,β,δ) = α/δ     # example
-c_ss(α,β,δ) = α*k_ss(α,β,δ)         # optionally as a function of k_ss
+# Compile model - system will detect states and co-states
+M = compile_model()
 
-M = compile_model(@locals)  # builds symbolic/numeric funcs from DSL + ss
-A = analyze(M; θ=(α=0.3, β=0.99, δ=0.1))  # Jacobian, eigs, stable dims
+# Analyze at parameters
+A = analyze(M; θ=(α=0.3, β=0.99, δ=0.1))
 
+# Solve for policy function
 π = solve_policy(M; θ=(α=0.3, β=0.99, δ=0.1),
-                 domain=:auto, order=7, smolyak_level=3)
+                 domain=:auto, order=7)
 
+# Simulate trajectory  
 traj = simulate(M, π; θ=(α=0.3, β=0.99, δ=0.1), k0=0.5, T=100.0)
 ```
 
-### 2.2 Identifier rules (and how we classify symbols)
+### 2.2 Steady State Solving
 
-* **Parameters**: any identifier whose **first Unicode character is Greek** (e.g., `α`, `δ`, `ρ_a`, `β1`) is a parameter symbol. We rely on Julia’s Unicode variable support; users can input Greek and script letters via LaTeX-like tab completion. ([docs.julialang.org][6])
-* **States**: any Latin identifier that appears on the **LHS of an equation whose LHS token starts with the script d** (𝒹…) is a state. E.g., `𝒹k`, `𝒹c`.
-* **Controls (algebraic variables)**: Latin identifiers that **do not** appear as LHS $𝒹·$ but do appear in equations, and/or appear in `0 = g(·)` algebraic lines.
-* **Nice disambiguation** between states vs controls:
-
-  * States are **declared by usage** (LHS `𝒹x = …`).
-  * Controls are **those not declared as states** and showing up in algebraic constraints; optionally allow explicit declarations:
-
-    ```julia
-    @states k c
-    @controls u
-    @model begin
-      𝒹k = f(k,c,u,α,…)
-      0   = g(k,c,u,α,…)
-    end
-    ```
-
-  This mirrors DAE patterns and keeps the math-like `𝒹x` cue for states.
-
-### 2.3 Grammar (inside `@model`)
-
-* Lines are equations `lhs = rhs` where `lhs` is either `𝒹x` or `0`.
-* `rhs` is a Julia expression over variables and parameters with standard operators; whitespace denotes multiplication (so `α k` parses as `α*k`).
-* Optional comments, Unicode all the way.
-
-# 3) Macro expansion & IR
-
-* The `@model` macro receives the block `Expr(:block, …)`.
-* For each equation:
-
-  1. **Classify LHS**
-
-     * If `lhs` is a `Symbol` whose **string starts with** the codepoint U+1D4B9 “𝒹” (or U+1D4ED “𝓭”), split `"𝒹x"` ⇒ `(:deriv, :x)`. ([codepoints.net][7])
-     * Else if `lhs == 0`, mark “algebraic”.
-  2. **Collect identifiers in `rhs`**. Mark first-Greek as parameters; first-Latin as variables.
-  3. **Accumulate** sets: `States`, `Controls`, `Params`.
-* Build a **symbolic representation** using Symbolics/ModelingToolkit:
-
-  * `@variables k c` and `@parameters α β δ …`
-  * Construct expressions for $f_k(\theta,k,c)$ and $f_c(\theta,k,c)$.
-  * Algebraic constraints as `g(θ,x,u)=0` if present.
-* Emit a **Model IR**:
-
-  ```julia
-  struct ModelIR
-    params::Vector{Symbol}
-    states::Vector{Symbol}
-    controls::Vector{Symbol}
-    f_exprs::Dict{Symbol,Any}   # state => Symbolics expression
-    g_exprs::Vector{Any}        # algebraic eqs
-  end
-  ```
-
-# 4) Codegen & numeric kernels
-
-* Use `Symbolics.jacobian` to derive $J_x = ∂f/∂x$ and optionally $J_θ=∂f/∂θ$. Then `build_function` to produce fast, allocation-free Julia functions (and in-place `!` variants). ([docs.sciml.ai][8])
-* Provide:
-
-  * `kdot!(out, θ, k, c)` and `cdot!(out, θ, k, c)`
-  * `Jx!(out, θ, k, c)` at arbitrary points
-* Fallbacks: if user code includes unregistered functions for Symbolics, switch to Dual-number AD (ForwardDiff) for numeric Jacobians.
-
-# 5) Steady state interface
-
-* Users **supply** `k_ss(θ)` and `c_ss(θ)` (functions or Symbolics expressions). Optionally, `c_ss = c_ss(k_ss, θ)`.
-* `analyze(model; θ)`:
-
-  1. Evaluate SS, build $J_x$ at $(k_{ss}, c_{ss})$.
-  2. Compute eigenvalues, report counts of stable vs unstable dimensions (continuous-time: Re(λ)<0 stable).
-  3. Return `Analysis` object with spectra, eigenvectors, and (optionally) invariant subspace projectors.
-     (Use ModelingToolkit’s nonlinear system tooling if users want the package to *find* SS when not given.) ([docs.sciml.ai][2])
-
-# 6) Stable-manifold policy $c(k)$
-
-### 6.1 Equation
-
-For $k∈\mathbb{R}^{n_k}$, $c:\mathbb{R}^{n_k}\to\mathbb{R}^{n_c}$,
-
-$$
-\underbrace{\nabla c(k)}_{n_c\times n_k}\;\underbrace{k\dot{}(\theta,k,c(k))}_{n_k}
-= \underbrace{c\dot{}(\theta,k,c(k))}_{n_c}, \qquad c(k_{ss})=c_{ss}.
-$$
-
-We solve for $c$ as a basis expansion $c(k)\approx \sum_j a_j \, \phi_j(\hat{k})$ with $\hat{k}\in[-1,1]^{n_k}$ via an affine map around $k_{ss}$.
-
-### 6.2 Bases & grids
-
-* **Chebyshev (univariate & tensor)** bases; derivatives available in closed form.
-* **Smolyak sparse grids** for high-dim $k$: anisotropic levels supported. Prefer SpectralKit.jl (cheb + Smolyak in one place) or ChebyshevApprox.jl + SparseGrids/DistributedSparseGrids for nodes/combination. ([Julia Packages][3], [GitHub][4], [The Open Journal][5])
-
-### 6.3 Collocation residual
-
-At nodes $\{k_i\}$,
-
-$$
-R_i(a) = \nabla c_a(k_i)\,k\dot{}(\theta,k_i,c_a(k_i)) - c\dot{}(\theta,k_i,c_a(k_i)) = 0.
-$$
-
-* Assemble least-squares (overdetermined), or square system via combination technique.
-* Enforce **pinning** $c(k_{ss})=c_{ss}$ (either include SS node or impose linear constraint on coefficients).
-* Solve $\min_a \sum_i \|R_i(a)\|^2$ with Gauss-Newton; Jacobian uses:
-
-  * analytic derivatives of basis, plus
-  * chain rule through `kdot`/`cdot` (use JIT Jacobians from §4).
-
-### 6.4 Domain & initialization
-
-* Default domain: hyper-box centered at $k_{ss}$ using eigen-structure of $J_x$ to pick radii along stable directions (user override).
-* **Warm start**: first-order Taylor stable manifold: $c(k_{ss}+Δk) ≈ c_{ss} + C Δk$, where $C$ solves the Sylvester-type equation obtained by linearizing the manifold condition. Use as initial coefficients.
-
-### 6.5 Output
-
-`Policy` object:
+The key innovation: use `0 =` to specify steady state conditions that the system should solve:
 
 ```julia
-struct Policy
-  basis   # basis descriptor
-  coeffs  # coefficients for each component of c
-  eval!(c_out, k)      # fast evaluation
-  jac!(J_out, k)       # ∇c(k)
+@model begin
+  # Dynamic equations
+  𝒹k = z*k^α - c - δ*k
+  @costate 𝒹c = c*(ρ - z*α*k^(α-1) + δ)
+  
+  # Steady state conditions (0 = ... means solve for SS)
+  0 = z*k_ss^α - c_ss - δ*k_ss
+  0 = ρ - z*α*k_ss^(α-1) + δ
+end
+
+# System automatically solves for k_ss, c_ss given parameters
+M = compile_model()
+ss = solve_steady_state(M; θ=(α=0.36, δ=0.1, ρ=0.04, z=1.0))
+# Returns: (k_ss=3.6, c_ss=0.26)
+```
+
+### 2.3 Variable Classification Rules
+
+* **Parameters**: First character is Greek (α, β, δ, ρ, σ, etc.)
+* **States**: Variables with 𝒹 prefix on LHS (𝒹k, 𝒹a, etc.)  
+* **Co-states**: Variables with 𝒹 prefix preceded by `@costate` macro
+* **Steady state variables**: Suffixed with `_ss` in `0 =` equations
+* **Auxiliary variables**: Other Latin variables in the equations
+
+### 2.4 Extended Example with Multiple States
+
+```julia
+@model begin
+  # States
+  𝒹k = z*k^α*h^(1-α) - c - δ_k*k
+  𝒹h = ξ*h - δ_h*h
+  
+  # Co-states (Lagrange multipliers)
+  @costate 𝒹λ_k = λ_k*(ρ - z*α*k^(α-1)*h^(1-α) + δ_k)
+  @costate 𝒹λ_h = λ_h*(ρ - z*(1-α)*k^α*h^(-α) + δ_h - ξ)
+  
+  # Optimality condition
+  c = λ_k^(-1/σ)
+  
+  # Steady state system (solved automatically)
+  0 = z*k_ss^α*h_ss^(1-α) - c_ss - δ_k*k_ss
+  0 = (ξ - δ_h)*h_ss
+  0 = ρ - z*α*k_ss^(α-1)*h_ss^(1-α) + δ_k
+  0 = c_ss - λ_k_ss^(-1/σ)
 end
 ```
 
-# 7) Simulation
+## 3. Macro Expansion & IR
 
-* Define a 1-block ODE in $k$ only:
+The `@model` macro processes the DSL block:
 
-  $$
-  k'(t) = k\dot{}(\theta, k, c(k)).
-  $$
-* Integrate with DifferentialEquations.jl; at saved times, compute $c(t)=c(k(t))$.
-* Provide helpers for deterministic paths, transitions between two SS, and for shock-responses if a deterministic time-varying θ(t) is supplied.
+1. **Parse equations**: Identify equation types
+   - Dynamic: `𝒹x = ...` (state) or `@costate 𝒹x = ...` (co-state)
+   - Steady state: `0 = ...` 
+   - Algebraic: `x = ...`
 
-# 8) Package structure
+2. **Classify variables**:
+   - States: LHS of `𝒹x = ...` without `@costate`
+   - Co-states: LHS of `@costate 𝒹x = ...`
+   - Parameters: Greek first character
+   - SS variables: Variables with `_ss` suffix in `0 =` equations
 
-```
-StableManifolds/
-  src/
-    StableManifolds.jl           # entry
-    dsl.jl                       # @model, @states, @controls
-    parser.jl                    # Unicode parsing, symbol classification
-    symbolic_backend.jl          # Symbolics/MTK construction & codegen
-    steady_state.jl              # SS API + stability analysis
-    bases/
-      chebyshev.jl               # basis, eval, gradients
-      smolyak.jl                 # node sets, combo technique
-    policy.jl                    # collocation residuals & solvers
-    simulate.jl                  # DE integration using policy
-    printing.jl                  # pretty summaries
-  test/ …
-```
+3. **Build symbolic system**:
+   ```julia
+   struct ModelIR
+     params::Vector{Symbol}
+     states::Vector{Symbol}
+     costates::Vector{Symbol}
+     dynamics::Dict{Symbol,Expr}      # x => ẋ expression
+     steady_state_eqs::Vector{Expr}   # 0 = f(..._ss)
+     algebraic_eqs::Vector{Expr}      # x = g(...)
+   end
+   ```
 
-# 9) Key algorithms — pseudocode
+## 4. Steady State Solver
 
-### 9.1 Parsing “𝒹x = rhs” and collecting symbols
+When `0 =` equations are present:
 
 ```julia
-function parse_model(block_expr)
-  eqs = []
-  for stmt in block_expr.args
-    @assert stmt.head == :(=)
-    lhs, rhs = stmt.args
-    if lhs isa Symbol && startswith(string(lhs), "𝒹")
-      x = Symbol(string(lhs)[end])   # simple 1-letter states; generalize to more
-      push!(eqs, (:state, x, rhs))
-    elseif lhs == 0
-      push!(eqs, (:alg, rhs))        # 0 = rhs
-    else
-      error("LHS must be 𝒹x or 0")
+function solve_steady_state(M::Model; θ, initial_guess=nothing)
+  # Extract steady state equations
+  ss_vars = [k_ss, c_ss, ...]  # Variables with _ss suffix
+  ss_eqs = M.steady_state_eqs   # 0 = f(ss_vars, θ)
+  
+  # Build nonlinear system
+  F(x) = evaluate_ss_equations(ss_eqs, x, θ)
+  
+  # Solve using NLsolve/ModelingToolkit
+  if initial_guess === nothing
+    x0 = default_initial_guess(M, θ)
+  end
+  
+  sol = nlsolve(F, x0)
+  return (k_ss=sol[1], c_ss=sol[2], ...)
+end
+```
+
+## 5. Stable Manifold Method
+
+### 5.1 Problem Formulation
+
+For states $k \in \mathbb{R}^{n_k}$ and co-states $c \in \mathbb{R}^{n_c}$:
+
+$$\nabla c(k) \cdot \dot{k}(\theta,k,c(k)) = \dot{c}(\theta,k,c(k)), \quad c(k_{ss})=c_{ss}$$
+
+### 5.2 Solution Strategy
+
+1. **Linearization**: Get initial approximation from linearized dynamics
+2. **Collocation**: Approximate $c(k) \approx \sum_j a_j \phi_j(k)$ using Chebyshev basis
+3. **Residual minimization**: At collocation nodes $\{k_i\}$:
+   $$R_i(a) = \nabla c_a(k_i) \cdot \dot{k}(\theta,k_i,c_a(k_i)) - \dot{c}(\theta,k_i,c_a(k_i))$$
+
+## 6. Implementation Modules
+
+```
+SaddlePaths.jl/
+├── src/
+│   ├── SaddlePaths.jl           # Main module & exports
+│   ├── dsl.jl                   # @model, @costate macros
+│   ├── parser.jl                # Equation parsing & classification
+│   ├── symbolic_backend.jl      # Symbolics/MTK integration
+│   ├── steady_state.jl          # SS solver (0 = ... equations)
+│   ├── stability.jl             # Eigenvalue analysis
+│   ├── bases/
+│   │   ├── chebyshev.jl        # Chebyshev polynomials
+│   │   └── smolyak.jl          # Sparse grids
+│   ├── policy.jl                # Stable manifold solver
+│   └── simulate.jl              # ODE integration
+```
+
+## 7. Key Algorithms
+
+### 7.1 DSL Parser with Co-state Detection
+
+```julia
+function parse_model(block)
+  states = Symbol[]
+  costates = Symbol[]
+  dynamics = Dict{Symbol,Any}()
+  ss_equations = []
+  
+  for expr in block.args
+    if is_macro_call(expr, :costate)
+      # Extract 𝒹x = rhs from @costate 𝒹x = rhs
+      eq = expr.args[2]
+      lhs, rhs = eq.args
+      var = extract_var_from_deriv(lhs)  # 𝒹c → c
+      push!(costates, var)
+      dynamics[var] = rhs
+      
+    elseif is_derivative_eq(expr)
+      # Regular state: 𝒹k = rhs
+      lhs, rhs = expr.args
+      var = extract_var_from_deriv(lhs)
+      push!(states, var)
+      dynamics[var] = rhs
+      
+    elseif is_steady_state_eq(expr)
+      # Steady state: 0 = f(..._ss)
+      push!(ss_equations, expr.args[2])
     end
   end
-  params, vars = collect_identifiers(eqs)  # using Unicode classification
-  states = [x for (tag,x,_) in eqs if tag==:state]
-  controls = setdiff(vars, states)
-  return ModelIR(params, states, controls, build_symbolics(eqs, params, states, controls))
+  
+  return ModelIR(states, costates, dynamics, ss_equations)
 end
 ```
 
-### 9.2 Jacobian & stability at SS
+### 7.2 Automatic Steady State Solution
 
 ```julia
-function analyze(M::Model; θ, k_ss, c_ss)
-  x_ss = vcat(k_ss(θ), c_ss(θ))
-  Jx = M.Jx(θ, x_ss)               # Symbolics-built numeric function
-  λ = eigvals(Jx)
-  return (J=Jx, eigvals=λ, nstable=count(real.(λ) .< 0))
-end
-```
-
-### 9.3 Policy collocation step
-
-```julia
-function solve_policy(M; θ, domain, order, smolyak_level)
-  B = build_basis(domain, order, smolyak_level)   # nodes, basis fns, grads
-  a = init_coeffs_from_linearization(M, θ, domain, B)
-
-  function residual(a)
-    R = []
-    for k_i in B.nodes
-      c_i, Dc_i = eval_c_and_grad(B, a, k_i)
-      kd = M.kdot(θ, k_i, c_i)
-      cd = M.cdot(θ, k_i, c_i)
-      push!(R, Dc_i*kd - cd)
-    end
-    pin!(R, a, B, k_ss(θ), c_ss(θ))
-    return vcat(R...)
+function compile_steady_state_solver(ss_equations, params)
+  # Convert symbolic equations to numerical function
+  ss_vars = extract_ss_variables(ss_equations)
+  
+  # Build residual function
+  function F!(resid, x, p)
+    # Substitute x into ss_vars, p into params
+    # Evaluate each equation, store in resid
   end
-
-  a* = gauss_newton(residual, a; jacobian=:AD_or_analytic)
-  return Policy(B, a*)
+  
+  # Return solver
+  return (θ) -> begin
+    prob = NonlinearProblem(F!, initial_guess, θ)
+    sol = solve(prob)
+    return NamedTuple(ss_vars .=> sol.u)
+  end
 end
 ```
 
-### 9.4 Simulation
+## 8. Usage Examples
+
+### 8.1 Neoclassical Growth Model
 
 ```julia
-function simulate(M, π; θ, k0, T)
-  f_k(t, k) = M.kdot(θ, k, π(k))
-  ts, ks = ode_solve(f_k, k0, T)
-  cs = [π(k) for k in ks]
-  return (t=ts, k=ks, c=cs)
+@model begin
+  # Dynamics
+  𝒹k = k^α - c - δ*k
+  @costate 𝒹c = c*(ρ + δ - α*k^(α-1))
+  
+  # Steady state (solved automatically)
+  0 = k_ss^α - c_ss - δ*k_ss
+  0 = ρ + δ - α*k_ss^(α-1)
+end
+
+M = compile_model()
+ss = solve_steady_state(M; θ=(α=0.36, δ=0.1, ρ=0.04))
+π = solve_policy(M; θ=(α=0.36, δ=0.1, ρ=0.04))
+```
+
+### 8.2 Two-Sector Model
+
+```julia
+@model begin
+  # States
+  𝒹k_1 = i_1 - δ*k_1
+  𝒹k_2 = i_2 - δ*k_2
+  
+  # Co-states (shadow prices)
+  @costate 𝒹q_1 = q_1*(r + δ) - α*A_1*k_1^(α-1)
+  @costate 𝒹q_2 = q_2*(r + δ) - α*A_2*k_2^(α-1)
+  
+  # Optimality
+  q_1 = q_2  # Investment arbitrage
+  c + i_1 + i_2 = A_1*k_1^α + A_2*k_2^α  # Resource constraint
+  
+  # Steady state system
+  0 = δ*k_1_ss - i_1_ss
+  0 = δ*k_2_ss - i_2_ss
+  0 = r + δ - α*A_1*k_1_ss^(α-1)
+  0 = r + δ - α*A_2*k_2_ss^(α-1)
 end
 ```
 
-# 10) Ergonomics & details
+## 9. Dependencies
 
-* **Unicode input**: we’ll document how to type `𝒹` and Greek in REPL/editors; Julia supports this natively. ([docs.julialang.org][6])
-* **Extensibility**:
-
-  * Multiple state blocks; vector $k$ and $c$ (e.g., `𝒹k₁`, `𝒹k₂`, `𝒹c₁`, …).
-  * Algebraic controls and DAEs (if `0 = g(·)` lines exist).
-  * Optional numerical continuation hooks via BifurcationKit for tracing steady states if desired. ([Julia Programming Language][9])
-* **Performance**: cache basis evals/gradients at nodes; `StaticArrays` for small systems; multi-thread residual assembly; Symbolics codegen for kernels. ([docs.sciml.ai][8])
-* **Validation**: detect accidental concatenation like `αk` without space; offer lint that suggests `α*k`. (We can parse tokens and warn on single identifiers that match Greek+Latin mix.)
-
-# 11) Dependencies (lean defaults; swappable)
-
-* **Symbolics.jl / ModelingToolkit.jl** for expressions, derivatives, codegen. ([docs.sciml.ai][1])
-* **SpectralKit.jl** (Chebyshev + Smolyak) or **ChebyshevApprox.jl**; optionally **SparseGrids.jl / DistributedSparseGrids.jl**. ([Julia Packages][3], [GitHub][4], [The Open Journal][5])
-* **DifferentialEquations.jl** for simulation (standard).
-
----
-
-If you want, I can refine the DSL grammar next (vector indices, named parameters, algebraic blocks), or sketch the linearization that seeds the manifold coefficients.
-
-[1]: https://docs.sciml.ai/ModelingToolkit/?utm_source=chatgpt.com "Home · ModelingToolkit.jl"
-[2]: https://docs.sciml.ai/ModelingToolkit/stable/tutorials/nonlinear/?utm_source=chatgpt.com "Modeling Nonlinear Systems · ModelingToolkit.jl"
-[3]: https://juliapackages.com/p/spectralkit?utm_source=chatgpt.com "SpectralKit.jl"
-[4]: https://github.com/RJDennis/ChebyshevApprox.jl?utm_source=chatgpt.com "RJDennis/ChebyshevApprox.jl: A Julia package to ..."
-[5]: https://www.theoj.org/joss-papers/joss.05003/10.21105.joss.05003.pdf?utm_source=chatgpt.com "A Julia library implementing an Adaptive Sparse Grid ..."
-[6]: https://docs.julialang.org/en/v1/manual/unicode-input/?utm_source=chatgpt.com "Unicode Input - Julia Documentation"
-[7]: https://codepoints.net/U%2B1D4B9?lang=en&utm_source=chatgpt.com "U+1D4B9 MATHEMATICAL SCRIPT SMALL D: 𝒹 – Unicode"
-[8]: https://docs.sciml.ai/Symbolics/stable/manual/derivatives/?utm_source=chatgpt.com "Derivatives and Differentials · Symbolics.jl"
-[9]: https://discourse.julialang.org/t/finding-steady-states-symbolicaly/119545?utm_source=chatgpt.com "Finding steady-states symbolicaly - Modelling & Simulations"
+- **Symbolics.jl / ModelingToolkit.jl**: Symbolic math & code generation
+- **NLsolve.jl / NonlinearSolve.jl**: For steady state solving
+- **DifferentialEquations.jl**: ODE integration
+- **FastChebInterp.jl / ApproxFun.jl**: Chebyshev approximation
+- **SparseGrids.jl**: Smolyak sparse grids (optional)
