@@ -110,11 +110,12 @@ Implements the parsing logic for the `@model` macro (fully implemented with enha
 - ~~`rewrite_refs()` - No longer needed with Variables module approach~~
 
 ### computation.jl (Numerical Solver)
-Defines the numerical solution framework:
+Defines the numerical solution framework with saddle path algorithm implementation:
 
 **Data Structures:**
 - `NumericalSolution` - Mutable struct with isolated namespace for each instance
   - Contains `namespace::Symbol` field storing unique namespace identifier
+  - Contains `coef::Vector` field for approximation coefficients
   - Automatically creates namespace on construction
   - Requires cleanup with `cleanup!()` to free resources
 - `SymbolicSolution` - Stores analytical steady-state relationships
@@ -123,14 +124,26 @@ Defines the numerical solution framework:
 - `evaluate_ode()` - Evaluates single ODE in solution's namespace
 - `evaluate_all_odes()` - Evaluates all ODEs at given state/costate values
 - `cleanup!()` - Releases namespace resources
-- `costate()` - Returns Chebyshev approximation function (TODO)
-- `𝑑costate()` - Computes derivative of approximation (TODO)
-- `solve_steady_state()` - Finds symbolic steady-state solutions (TODO)
+- `initialize_costate_functions!()` - Sets up costate functions in namespace for c(k) expressions
+- `evaluate_costate_ode()` - Evaluates costate ODE using current approximation
+- `evaluate_costate_derivative()` - Evaluates ∇costate * state_ODE as alternative approximation
+- `compute_approximation_error()` - Computes errors between two approximation methods
+- `check_convergence()` - Checks if sum of squared errors < tolerance
+- `iterate_solution!()` - Performs one iteration to update coefficients
+- `solve_saddle_path()` - Main solver orchestrating the entire algorithm
 
-**Solution Methods (Planned):**
-- Spectral methods via SpectralKit integration
+**Saddle Path Algorithm:**
+1. **Dual Approximation**: Costate derivatives approximated in two ways:
+   - From the costate ODE (which may include costate function calls)
+   - As ∇costate * state_ODE (Jacobian of approximation times state derivative)
+2. **Error Evaluation**: Approximation errors computed at all grid points
+3. **Convergence**: Achieved when sum of squared errors is sufficiently small
+4. **Iteration**: Coefficients updated using collocation methods until convergence
+
+**Solution Methods:**
+- Spectral methods via backend integration (FastChebInterp.jl or ApproxFun.jl)
 - Chebyshev polynomial approximation on sparse grids
-- Iterative convergence tracking
+- Iterative convergence tracking with tolerance-based stopping
 
 ## Usage Example
 
@@ -202,11 +215,15 @@ This design allows the parser's symbolic output to be evaluated numerically with
   - Function signatures defined but implementations pending
 
 - **Computation Backend:** 🔄 PARTIALLY IMPLEMENTED
-  - `NumericalSolution` struct with namespace integration
+  - `NumericalSolution` struct with namespace integration and coef field
   - ODE evaluation in isolated namespaces
   - Parameter initialization and state/costate variable management
   - Backend field for numerical method integration
-  - TODO: Spectral methods, steady-state solver, convergence algorithms
+  - Saddle path algorithm framework with function signatures
+  - Costate function initialization in namespaces
+  - Dual approximation error computation
+  - Convergence checking and iteration logic
+  - TODO: Actual implementation of numerical methods and convergence algorithms
 
 - **Testing:** ✅ COMPREHENSIVE
   - Parser tests: 242/242 ✅ passing
@@ -283,7 +300,8 @@ user_expr |> vectorize_function_calls |> (e -> eval_in_namespace(ns_id, e))
 
 **Current Limitations:**
 - No actual spectral method implementation (FastChebInterp not added)
-- Numerical solution backend partially implemented
+- Numerical solution backend framework designed but algorithms not implemented
+- Saddle path algorithm has function signatures but no actual implementation
 - No steady-state solver or convergence algorithms yet
 
 ## Julia Coding Style Preferences
@@ -317,19 +335,26 @@ user_expr |> vectorize_function_calls |> (e -> eval_in_namespace(ns_id, e))
 3. **Backend Abstraction is Essential**: The abstract backend system allows for clean extension to different numerical methods
 4. **Modular Architecture Pays Off**: Clear separation of concerns makes the codebase maintainable and extensible
 5. **Julia's Metaprogramming is Excellent**: The DSL parser showcases Julia's powerful macro system
+6. **Saddle Path Algorithm Structure**: The algorithm uses dual approximation of costate derivatives with error evaluation at grid points
+7. **Namespace Function Integration**: Costate functions must be dynamically created in namespaces so c(k) calls backend approximations
+8. **Collocation Methods**: The algorithm relies on evaluating approximation errors at collocation points for convergence
 
 **Key Architectural Decisions:**
 - **Isolated Namespaces**: Each solution gets its own variable scope using dynamic submodules
 - **Abstract Backends**: Clean interface for numerical methods without tight coupling
 - **TDD Approach**: Comprehensive test suite ensures reliability and guides development
 - **Modular Design**: Clear separation between parsing, namespaces, backends, and computation
+- **Dual Approximation Algorithm**: Saddle path solving uses two complementary methods for costate derivative approximation
+- **Dynamic Function Creation**: Costate functions are created in namespaces to enable natural c(k) syntax
+- **Collocation-Based Convergence**: Errors evaluated at grid points for robust convergence checking
 
 **Next Steps for Completion:**
 1. Add spectral method library (FastChebInterp.jl or ApproxFun.jl)
-2. Implement backend API functions
-3. Complete numerical solution convergence algorithms
+2. Implement backend API functions (grid, collocation_matrix, costate, ∇costate)
+3. Implement the saddle path algorithm functions (currently signatures only)
 4. Add steady-state solver
 5. Build documentation and examples
+6. Add convergence algorithms for iterative coefficient updates
 
 ## Testing
 
