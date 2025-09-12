@@ -6,10 +6,6 @@ CurrentModule = SaddlePaths
 
 ## The @model Macro
 
-```@docs
-@model
-```
-
 ## Syntax Rules
 
 ### Differential Equations
@@ -139,9 +135,7 @@ end
 
 The `@model` macro creates a `SaddlePath` struct:
 
-```@docs
-SaddlePath
-```
+
 
 ### Accessing Components
 

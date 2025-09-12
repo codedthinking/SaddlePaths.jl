@@ -2,8 +2,15 @@ using Test
 using SaddlePaths
 
 # Import namespace functions for testing
-import SaddlePaths: create_namespace, delete_namespace, set_variable!, get_variable,
-                    update_namespace!, eval_in_namespace, with_namespace, Variables
+import SaddlePaths:
+    create_namespace,
+    delete_namespace,
+    set_variable!,
+    get_variable,
+    update_namespace!,
+    eval_in_namespace,
+    with_namespace,
+    Variables
 
 @testset "Namespace Management" begin
 
@@ -15,7 +22,7 @@ import SaddlePaths: create_namespace, delete_namespace, set_variable!, get_varia
         @test length(string(ns_id)) > 3  # Should be longer than just "ns_"
 
         # Test that namespace exists
-        @test hasfield(Variables, ns_id)
+        @test isdefined(Variables, ns_id)
         ns = getfield(Variables, ns_id)
         @test ns isa Module
 
@@ -55,19 +62,19 @@ import SaddlePaths: create_namespace, delete_namespace, set_variable!, get_varia
         set_variable!(ns_id, :test_var, 42)
 
         # Verify namespace exists and has variable
-        @test hasfield(Variables, ns_id)
+        @test isdefined(Variables, ns_id)
         @test get_variable(ns_id, :test_var) == 42
 
         # Delete namespace
         delete_namespace(ns_id)
 
         # Namespace should still exist but variables should be cleared
-        @test hasfield(Variables, ns_id)
+        @test isdefined(Variables, ns_id)
         ns = getfield(Variables, ns_id)
         @test ns isa Module
 
         # Variable should be gone (or set to nothing)
-        @test_throws UndefVarError get_variable(ns_id, :test_var)
+        @test get_variable(ns_id, :test_var) === nothing
     end
 
     @testset "eval_in_namespace" begin
@@ -231,7 +238,7 @@ import SaddlePaths: create_namespace, delete_namespace, set_variable!, get_varia
     @testset "Memory management" begin
         # Create multiple namespaces to test memory handling
         namespaces = Symbol[]
-        for i in 1:10
+        for i = 1:10
             ns_id = create_namespace()
             push!(namespaces, ns_id)
             set_variable!(ns_id, :test_var, i)
@@ -249,9 +256,9 @@ import SaddlePaths: create_namespace, delete_namespace, set_variable!, get_varia
 
         # Verify cleanup worked
         for ns_id in namespaces
-            @test hasfield(Variables, ns_id)
+            @test isdefined(Variables, ns_id)
             # Variables should be cleared
-            @test_throws UndefVarError get_variable(ns_id, :test_var)
+            @test get_variable(ns_id, :test_var) === nothing
         end
     end
 

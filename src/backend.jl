@@ -22,10 +22,18 @@ struct ProjectionBackend <: AbstractBackend
 end
 
 # Core backend API functions
-grid(backend::AbstractBackend) = error("grid() not implemented for $(typeof(backend)). Implement this method in your concrete backend type.")
+grid(backend::AbstractBackend) = error(
+    "grid() not implemented for $(typeof(backend)). Implement this method in your concrete backend type.",
+)
 
-collocation_matrix(backend::AbstractBackend) = error("collocation_matrix() not implemented for $(typeof(backend)). Implement this method in your concrete backend type.")
+collocation_matrix(backend::AbstractBackend) = error(
+    "collocation_matrix() not implemented for $(typeof(backend)). Implement this method in your concrete backend type.",
+)
 
-costate(backend::AbstractBackend, coeffs::AbstractVector) = error("costate() not implemented for $(typeof(backend)). Implement this method in your concrete backend type.")
+costate(backend::AbstractBackend, coeffs::AbstractVector) = error(
+    "costate() not implemented for $(typeof(backend)). Implement this method in your concrete backend type.",
+)
 
-∇costate(backend::AbstractBackend, coeffs::AbstractVector) = error("∇costate() not implemented for $(typeof(backend)). Implement this method in your concrete backend type.")
+∇costate(backend::AbstractBackend, coeffs::AbstractVector) = error(
+    "∇costate() not implemented for $(typeof(backend)). Implement this method in your concrete backend type.",
+)

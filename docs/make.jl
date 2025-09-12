@@ -16,9 +16,7 @@ makedocs(
         "Examples" => "examples.md",
         "API Reference" => "api.md",
         "Theory" => "theory.md",
-    ]
+    ],
 )
 
-deploydocs(
-    repo = "github.com/yourusername/SaddlePaths.jl.git",
-)
+deploydocs(repo = "github.com/yourusername/SaddlePaths.jl.git")

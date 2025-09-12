@@ -2,8 +2,14 @@ using Test
 using SaddlePaths
 
 # Import internal functions for testing
-import SaddlePaths: create_namespace, delete_namespace, set_variable!, get_variable,
-                    update_namespace!, eval_in_namespace, vectorize_function_calls
+import SaddlePaths:
+    create_namespace,
+    delete_namespace,
+    set_variable!,
+    get_variable,
+    update_namespace!,
+    eval_in_namespace,
+    vectorize_function_calls
 import SaddlePaths: NumericalSolution, cleanup!
 
 @testset "NumericalSolution" begin
@@ -25,7 +31,8 @@ import SaddlePaths: NumericalSolution, cleanup!
             @test solution.error == Inf
             @test solution.iterations == 0
             @test solution.converged == false
-            @test length(solution.steady_state) == length(model.state) + length(model.costate)
+            @test length(solution.steady_state) ==
+                  length(model.state) + length(model.costate)
             @test all(iszero, solution.backend.coeffs)  # Coefficients should be initialized to zeros
         end
 
@@ -240,7 +247,7 @@ import SaddlePaths: NumericalSolution, cleanup!
                 𝑑k₂ = k₂ - c₂(k₂) - γ * k₂
             end
 
-            solution = NumericalSolution(model, [0.3, 0.5, 0.1, 0.2])  # α, β, δ, γ
+            solution = NumericalSolution(model, [0.3, 0.5, 0.2, 0.1])  # α, β, γ, δ
 
             # Check all state variables
             @test get_variable(solution.namespace, :k₁) == 0.0
@@ -413,7 +420,8 @@ import SaddlePaths: NumericalSolution, cleanup!
             solution = NumericalSolution(model, Float64[])
 
             @test solution.params == Float64[]
-            @test length(solution.steady_state) == length(model.state) + length(model.costate)
+            @test length(solution.steady_state) ==
+                  length(model.state) + length(model.costate)
 
             # Clean up
             cleanup!(solution)

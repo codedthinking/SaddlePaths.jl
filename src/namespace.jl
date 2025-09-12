@@ -25,8 +25,7 @@ Variables
 │   └── ...
 ```
 """
-module Variables
-end
+module Variables end
 
 """
     create_namespace() -> Symbol
@@ -50,10 +49,10 @@ ns_id = create_namespace()
 function create_namespace()::Symbol
     # Generate unique namespace name
     ns_name = Symbol("ns_", string(gensym())[3:end])  # Remove the ## prefix from gensym
-    
+
     # Create the submodule within Variables
     Core.eval(Variables, :(module $ns_name end))
-    
+
     return ns_name
 end
 
@@ -78,12 +77,20 @@ function delete_namespace(ns_id::Symbol)
     # and remove references to make it eligible for garbage collection
     try
         ns = getfield(Variables, ns_id)
-        for name in names(ns; all=true)
+        for name in names(ns; all = true)
             if name != ns_id && name != :eval && name != Symbol("#eval")
                 try
-                    Core.eval(ns, :($name = nothing))
+                    # Try to delete the binding if it exists
+                    if isdefined(ns, name)
+                        Base.delete_binding!(ns, name)
+                    end
                 catch
-                    # Some names might be protected
+                    # Some names might be protected, set to nothing as fallback
+                    try
+                        Core.eval(ns, :($name = nothing))
+                    catch
+                        # Ignore errors
+                    end
                 end
             end
         end
@@ -114,6 +121,27 @@ function set_variable!(ns_id::Symbol, var_name::Symbol, value)
 end
 
 """
+    set_variable!(ns::Module, var_name::Symbol, value)
+
+Set a variable value in a namespace module (used with with_namespace).
+
+# Arguments
+- `ns::Module` - The namespace module
+- `var_name::Symbol` - Name of the variable (e.g., :k, :c, :α)
+- `value` - The value to assign
+
+# Example
+```julia
+with_namespace(ns_id) do ns
+    set_variable!(ns, :k, 1.5)
+end
+```
+"""
+function set_variable!(ns::Module, var_name::Symbol, value)
+    Core.eval(ns, :($var_name = $value))
+end
+
+"""
     get_variable(ns_id::Symbol, var_name::Symbol)
 
 Retrieve a variable value from the specified namespace.
@@ -132,6 +160,29 @@ k_value = get_variable(:ns_7f8a9b2c, :k)
 """
 function get_variable(ns_id::Symbol, var_name::Symbol)
     ns = getfield(Variables, ns_id)
+    return getfield(ns, var_name)
+end
+
+"""
+    get_variable(ns::Module, var_name::Symbol)
+
+Retrieve a variable value from a namespace module (used with with_namespace).
+
+# Arguments
+- `ns::Module` - The namespace module
+- `var_name::Symbol` - Name of the variable to retrieve
+
+# Returns
+- The value of the variable
+
+# Example
+```julia
+with_namespace(ns_id) do ns
+    k = get_variable(ns, :k)
+end
+```
+"""
+function get_variable(ns::Module, var_name::Symbol)
     return getfield(ns, var_name)
 end
 
@@ -157,12 +208,12 @@ function update_namespace!(ns_id::Symbol, model, state_vals, costate_vals, param
     for (name, val) in zip(model.state, state_vals)
         set_variable!(ns_id, name, val)
     end
-    
+
     # Set costate variables
     for (name, val) in zip(model.costate, costate_vals)
         set_variable!(ns_id, name, val)
     end
-    
+
     # Set parameters
     for (name, val) in zip(model.params, param_vals)
         set_variable!(ns_id, name, val)
@@ -223,5 +274,11 @@ function with_namespace(f::Function, ns_id::Symbol)
 end
 
 # Export the public interface
-export Variables, create_namespace, delete_namespace, set_variable!, get_variable,
-       update_namespace!, eval_in_namespace, with_namespace
+export Variables,
+    create_namespace,
+    delete_namespace,
+    set_variable!,
+    get_variable,
+    update_namespace!,
+    eval_in_namespace,
+    with_namespace

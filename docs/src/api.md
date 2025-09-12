@@ -6,6 +6,10 @@ CurrentModule = SaddlePaths
 
 ## Public API
 
+```@docs
+SaddlePaths.SaddlePaths
+```
+
 ### Macro
 
 ```@docs
@@ -16,12 +20,14 @@ CurrentModule = SaddlePaths
 
 ```@docs
 SaddlePath
+SaddlePaths.SymbolicSolution
 ```
 
 ### Functions
 
 ```@docs
 solve_saddle_path
+SaddlePaths.solve_steady_state
 ```
 
 ## Internal Functions
@@ -35,6 +41,38 @@ SaddlePaths.parse_differential_equations
 SaddlePaths.find_function_calls!
 SaddlePaths.collect_all_symbols!
 SaddlePaths.is_greek_letter
+```
+
+### Namespace Management
+
+```@docs
+SaddlePaths.Variables
+SaddlePaths.create_namespace
+SaddlePaths.delete_namespace
+SaddlePaths.set_variable!
+SaddlePaths.get_variable
+SaddlePaths.update_namespace!
+SaddlePaths.eval_in_namespace
+SaddlePaths.with_namespace
+```
+
+### Numerical Solution
+
+```@docs
+SaddlePaths.NumericalSolution
+SaddlePaths.cleanup!
+SaddlePaths.evaluate_ode
+SaddlePaths.evaluate_all_odes
+```
+
+### Utility Functions
+
+```@docs
+SaddlePaths.vectorize_function_calls
+SaddlePaths.isfunctioncall
+SaddlePaths.is_operator
+SaddlePaths.is_dotted_operator
+SaddlePaths.approx_eval
 ```
 
 ## Working with Model Output

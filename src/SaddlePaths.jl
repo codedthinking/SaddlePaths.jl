@@ -147,15 +147,10 @@ end
 """
 macro model(name::Symbol, block::Expr)
     state, costate, params, odes = parse_differential_equations(block)
-    
+
     # Create the SaddlePath struct
     quote
-        $(esc(name)) = SaddlePath(
-            $state,
-            $costate,
-            $params,
-            $odes
-        )
+        $(esc(name)) = SaddlePath($state, $costate, $params, $odes)
     end
 end
 
@@ -266,8 +261,7 @@ solve_steady_state(ramsey_model, :COSTATE) =
         [:(k^α - δ * k)]
     ) 
 """
-function solve_steady_state(model::SaddlePath)::SymbolicSolution
-end
+function solve_steady_state(model::SaddlePath)::SymbolicSolution end
 
 
 end # module

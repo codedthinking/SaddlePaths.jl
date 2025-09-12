@@ -1,8 +1,14 @@
 # Import required modules
-using ..SaddlePaths: create_namespace, delete_namespace, set_variable!,
-                     get_variable, update_namespace!, eval_in_namespace,
-                     vectorize_function_calls
-using ..SaddlePaths: AbstractBackend, SpectralBackend, FiniteDifferenceBackend, ProjectionBackend
+using ..SaddlePaths:
+    create_namespace,
+    delete_namespace,
+    set_variable!,
+    get_variable,
+    update_namespace!,
+    eval_in_namespace,
+    vectorize_function_calls
+using ..SaddlePaths:
+    AbstractBackend, SpectralBackend, FiniteDifferenceBackend, ProjectionBackend
 
 # Placeholder for spectral methods
 
@@ -41,13 +47,13 @@ cleanup!(solution)  # Releases namespace
 mutable struct NumericalSolution
     model::SaddlePath
     namespace::Symbol  # Unique namespace identifier
-    params::Vector{T} where T <: Number
-    steady_state::Vector{T} where T <: Number
+    params::Vector{T} where {T<:Number}
+    steady_state::Vector{T} where {T<:Number}
     backend::AbstractBackend
     error::AbstractFloat
     iterations::Int
     converged::Bool
-    
+
     """
         NumericalSolution(model::SaddlePath, param_values::Vector, backend::AbstractBackend)
 
@@ -69,7 +75,11 @@ mutable struct NumericalSolution
     solution = NumericalSolution(model, [0.3, 0.1, 0.05], backend)  # α, δ, ρ
     ```
     """
-    function NumericalSolution(model::SaddlePath, param_values::Vector{T}, backend::AbstractBackend) where T <: Number
+    function NumericalSolution(
+        model::SaddlePath,
+        param_values::Vector{T},
+        backend::AbstractBackend,
+    ) where {T<:Number}
         # Create unique namespace for this solution
         ns_id = create_namespace()
 
@@ -87,12 +97,15 @@ mutable struct NumericalSolution
         end
 
         # Create instance with backend
-        new(model, ns_id, param_values,
+        new(
+            model,
+            ns_id,
+            param_values,
             zeros(T, length(model.state) + length(model.costate)),  # steady_state
             backend,
             Inf,  # error
             0,    # iterations
-            false # converged
+            false, # converged
         )
     end
 
@@ -115,10 +128,10 @@ mutable struct NumericalSolution
     solution = NumericalSolution(model, [0.3, 0.1, 0.05])  # α, δ, ρ
     ```
     """
-    function NumericalSolution(model::SaddlePath, param_values::Vector{T}) where T <: Number
+    function NumericalSolution(model::SaddlePath, param_values::Vector{T}) where {T<:Number}
         # Create default spectral backend (placeholder implementation)
         basis = nothing  # Placeholder for SpectralKit basis
-        grid = collect(range(0.1, 2.0, length=10))  # Simple grid
+        grid = collect(range(0.1, 2.0, length = 10))  # Simple grid
         coeffs = zeros(Float64, 10)  # Placeholder coefficients
         backend = SpectralBackend(basis, grid, coeffs)
         NumericalSolution(model, param_values, backend)
@@ -166,12 +179,17 @@ dk = evaluate_ode(solution, 1, [1.5], [0.8])
 """
 function evaluate_ode(solution::NumericalSolution, var_idx::Int, state_vals, costate_vals)
     # Update namespace with current values
-    update_namespace!(solution.namespace, solution.model, 
-                      state_vals, costate_vals, solution.params)
-    
+    update_namespace!(
+        solution.namespace,
+        solution.model,
+        state_vals,
+        costate_vals,
+        solution.params,
+    )
+
     # Get the ODE expression
     ode_expr = solution.model.ODEs[var_idx]
-    
+
     # Vectorize and evaluate in namespace
     vectorized_expr = vectorize_function_calls(ode_expr)
     return eval_in_namespace(solution.namespace, vectorized_expr)
@@ -194,11 +212,11 @@ dots = evaluate_all_odes(solution, [1.5], [0.8])
 function evaluate_all_odes(solution::NumericalSolution, state_vals, costate_vals)
     n_odes = length(solution.model.ODEs)
     results = Vector{eltype(state_vals)}(undef, n_odes)
-    
-    for i in 1:n_odes
+
+    for i = 1:n_odes
         results[i] = evaluate_ode(solution, i, state_vals, costate_vals)
     end
-    
+
     return results
 end
 
@@ -212,8 +230,7 @@ Functions to get the Chebyshev approximation and its derivative.
 """
 Evaluate the c(k) expression using the approximation.
 """
-function approx_eval(expr::Expr, var::Symbol, sol::NumericalSolution)
-end
+function approx_eval(expr::Expr, var::Symbol, sol::NumericalSolution) end
 
 # TODO: Implement these functions
 # state_dot(s::NumericalSolution)

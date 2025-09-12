@@ -30,20 +30,20 @@ states, costates, params, odes = parse_differential_equations(block)
 """
 function parse_differential_equations(block::Expr)
     @assert block.head == :block "Expected a block expression"
-    
+
     # First pass: collect all differential variables and their RHS
     diff_eqs = Pair{Symbol,Any}[]
     lhs_vars = Symbol[]  # Variables on the LHS (states/costates)
-    
+
     for expr in block.args
         # Skip line number nodes
         expr isa LineNumberNode && continue
-        
+
         # Parse assignment expressions like 𝑑x = ...
         if expr isa Expr && expr.head == :(=)
             lhs = expr.args[1]
             rhs = expr.args[2]
-            
+
             # Check if LHS is a differential (starts with 𝑑)
             if lhs isa Symbol
                 lhs_str = string(lhs)
@@ -56,34 +56,32 @@ function parse_differential_equations(block::Expr)
             end
         end
     end
-    
+
     # Second pass: analyze RHS to determine states, costates, and params
-    
+
     # Find all function calls in RHS expressions
     function_calls = Set{Symbol}()
     foreach(eq -> find_function_calls!(function_calls, eq.second), diff_eqs)
-    
+
     # Classify LHS variables based on whether they appear as functions
     costate_vars = [var for var in lhs_vars if var in function_calls]
     state_vars = [var for var in lhs_vars if var ∉ function_calls]
-    
+
     # Collect all symbols from RHS
     all_rhs_symbols = Set{Symbol}()
     foreach(eq -> collect_all_symbols!(all_rhs_symbols, eq.second), diff_eqs)
-    
+
     # Classify RHS symbols that aren't LHS variables
     remaining_symbols = setdiff(all_rhs_symbols, lhs_vars)
     params = sort([sym for sym in remaining_symbols if is_greek_letter(sym)])
     other_symbols = sort([sym for sym in remaining_symbols if !is_greek_letter(sym)])
-    
+
     # Build ODEs array in correct order: state first, then costate
     # Create a lookup dictionary for efficiency
     eq_dict = Dict(diff_eqs)
-    odes = vcat(
-        [eq_dict[var] for var in state_vars],
-        [eq_dict[var] for var in costate_vars]
-    )
-    
+    odes =
+        vcat([eq_dict[var] for var in state_vars], [eq_dict[var] for var in costate_vars])
+
     return state_vars, costate_vars, params, odes
 end
 
@@ -116,10 +114,13 @@ function find_function_calls!(funcs::Set{Symbol}, expr)
                 push!(funcs, func_name)
             end
             # Recursively check arguments
-            for i in 2:length(expr.args)
+            for i = 2:length(expr.args)
                 find_function_calls!(funcs, expr.args[i])
             end
-        elseif expr.head == Symbol(".") && length(expr.args) >= 2 && expr.args[2] isa Expr && expr.args[2].head == :tuple
+        elseif expr.head == Symbol(".") &&
+               length(expr.args) >= 2 &&
+               expr.args[2] isa Expr &&
+               expr.args[2].head == :tuple
             # Vectorized function call f.(x)
             func_name = expr.args[1]
             if func_name isa Symbol && !is_operator(func_name)
@@ -177,7 +178,7 @@ function collect_all_symbols!(symbols::Set{Symbol}, expr)
             if func_name isa Symbol && !is_operator(func_name)
                 push!(symbols, func_name)
             end
-            for i in 2:length(expr.args)
+            for i = 2:length(expr.args)
                 collect_all_symbols!(symbols, expr.args[i])
             end
         else
@@ -190,13 +191,77 @@ function collect_all_symbols!(symbols::Set{Symbol}, expr)
 end
 
 # Greek letters used in economics
-const GREEK_CHARS = Set(['α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 
-                         'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω',
-                         'Α', 'Β', 'Γ', 'Δ', 'Ε', 'Ζ', 'Η', 'Θ', 'Ι', 'Κ', 'Λ', 'Μ',
-                         'Ν', 'Ξ', 'Ο', 'Π', 'Ρ', 'Σ', 'Τ', 'Υ', 'Φ', 'Χ', 'Ψ', 'Ω'])
+const GREEK_CHARS = Set([
+    'α',
+    'β',
+    'γ',
+    'δ',
+    'ε',
+    'ζ',
+    'η',
+    'θ',
+    'ι',
+    'κ',
+    'λ',
+    'μ',
+    'ν',
+    'ξ',
+    'ο',
+    'π',
+    'ρ',
+    'σ',
+    'τ',
+    'υ',
+    'φ',
+    'χ',
+    'ψ',
+    'ω',
+    'Α',
+    'Β',
+    'Γ',
+    'Δ',
+    'Ε',
+    'Ζ',
+    'Η',
+    'Θ',
+    'Ι',
+    'Κ',
+    'Λ',
+    'Μ',
+    'Ν',
+    'Ξ',
+    'Ο',
+    'Π',
+    'Ρ',
+    'Σ',
+    'Τ',
+    'Υ',
+    'Φ',
+    'Χ',
+    'Ψ',
+    'Ω',
+])
 
 # Syntactic operators that require special handling
-const SYNTACTIC_OPERATORS = (:&&, :||, :+=, :-=, :*=, :/=, ://=, :\=, :^=, :÷=, :%=, :<<=, :>>=, :>>>=, :|=, :&=, :⊻=)
+const SYNTACTIC_OPERATORS = (
+    :&&,
+    :||,
+    :+=,
+    :-=,
+    :*=,
+    :/=,
+    ://=,
+    :\=,
+    :^=,
+    :÷=,
+    :%=,
+    :<<=,
+    :>>=,
+    :>>>=,
+    :|=,
+    :&=,
+    :⊻=,
+)
 
 # Helper functions for expression analysis
 """
@@ -213,7 +278,8 @@ is_operator(x::Symbol) = Base.isoperator(x) && x != :.
 Check if a symbol is a broadcasting/vectorized operator (starts with .).
 """
 is_dotted_operator(::Any) = false
-is_dotted_operator(x::Symbol) = is_operator(x) && length(string(x)) > 0 && first(string(x)) == '.'
+is_dotted_operator(x::Symbol) =
+    is_operator(x) && length(string(x)) > 0 && first(string(x)) == '.'
 
 """
     isfunctioncall(expr) -> Bool
@@ -222,10 +288,16 @@ Check if an expression is a function call, including operators and broadcasting.
 """
 isfunctioncall(::Any) = false
 isfunctioncall(x::Symbol) = is_operator(x)
-isfunctioncall(x::Expr) = x.head == :call || 
-                          (x.head == Symbol(".") && x.args[1] isa Symbol && 
-                           length(x.args) >= 2 && x.args[2] isa Expr && x.args[2].head == :tuple) ||
-                          x.head in SYNTACTIC_OPERATORS
+isfunctioncall(x::Expr) =
+    x.head == :call ||
+    (
+        x.head == Symbol(".") &&
+        x.args[1] isa Symbol &&
+        length(x.args) >= 2 &&
+        x.args[2] isa Expr &&
+        x.args[2].head == :tuple
+    ) ||
+    x.head in SYNTACTIC_OPERATORS
 
 """
     is_greek_letter(sym::Symbol) -> Bool
@@ -294,46 +366,53 @@ With the Variables module approach, the expression pipeline is simplified to:
 function vectorize_function_calls(expr)
     # Base case: non-expression types pass through unchanged
     expr isa Expr || return expr
-    
+
     # Check if this is a function call that needs vectorization
     if isfunctioncall(expr)
         # Already vectorized (broadcasting) - recurse on arguments but preserve the dot
         if expr.head == Symbol(".")
-            return Expr(expr.head, 
-                       vectorize_function_calls(expr.args[1]),
-                       Expr(:tuple, vectorize_function_calls.(expr.args[2].args)...))
+            return Expr(
+                expr.head,
+                vectorize_function_calls(expr.args[1]),
+                Expr(:tuple, vectorize_function_calls.(expr.args[2].args)...),
+            )
         end
-        
+
         # Handle syntactic operators (&&, ||, etc.) - they become .&& .||
         if expr.head in SYNTACTIC_OPERATORS
             dotted_op = Symbol("." * String(expr.head))
             return Expr(dotted_op, vectorize_function_calls.(expr.args)...)
         end
-        
+
         # Handle regular operators in call position: +(x, y) or x + y
         if expr.head == :call
             fname = expr.args[1]
-            
+
             # Check if the function name is an operator that should be dotted
             if is_operator(fname) && !is_dotted_operator(fname)
                 # Convert to dotted operator
                 dotted_fname = Symbol("." * String(fname))
-                return Expr(:call, dotted_fname, 
-                           vectorize_function_calls.(expr.args[2:end])...)
+                return Expr(
+                    :call,
+                    dotted_fname,
+                    vectorize_function_calls.(expr.args[2:end])...,
+                )
             end
-            
+
             # Regular function call f(x) becomes f.(x)
             if fname isa Symbol && !is_operator(fname)
-                return Expr(Symbol("."), fname,
-                           Expr(:tuple, vectorize_function_calls.(expr.args[2:end])...))
+                return Expr(
+                    Symbol("."),
+                    fname,
+                    Expr(:tuple, vectorize_function_calls.(expr.args[2:end])...),
+                )
             end
-            
+
             # Otherwise recurse without changing structure
-            return Expr(expr.head, fname, 
-                       vectorize_function_calls.(expr.args[2:end])...)
+            return Expr(expr.head, fname, vectorize_function_calls.(expr.args[2:end])...)
         end
     end
-    
+
     # For all other expression types, just recurse on arguments
     return Expr(expr.head, vectorize_function_calls.(expr.args)...)
 end
