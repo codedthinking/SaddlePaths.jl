@@ -3,6 +3,8 @@ using Test
 
 # Include test files
 include("test_parser.jl")
+include("test_namespace.jl")
+include("test_computation.jl")
 include("test_saddlepaths.jl")
 
 @testset "SaddlePaths.jl" begin
