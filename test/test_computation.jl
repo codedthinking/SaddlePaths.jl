@@ -26,7 +26,7 @@ import SaddlePaths: NumericalSolution, cleanup!
             @test solution.iterations == 0
             @test solution.converged == false
             @test length(solution.steady_state) == length(model.state) + length(model.costate)
-            @test isempty(solution.coefs)
+            @test all(iszero, solution.backend.coeffs)  # Coefficients should be initialized to zeros
         end
 
         @testset "Namespace creation" begin

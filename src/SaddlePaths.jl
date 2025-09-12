@@ -25,6 +25,8 @@ end
 module SaddlePaths
 
 export @model, SaddlePath, solve_saddle_path, SymbolicSolution, solve_steady_state
+export AbstractBackend, SpectralBackend, FiniteDifferenceBackend, ProjectionBackend
+export NumericalSolution, cleanup!, evaluate_ode, evaluate_all_odes
 
 """
     SaddlePath
@@ -206,6 +208,7 @@ end
 # Include other module files after defining the structs they depend on
 include("parser.jl")
 include("namespace.jl")
+include("backend.jl")
 include("computation.jl")
 
 """

@@ -1,7 +1,10 @@
-# Import namespace management functions
-using ..SaddlePaths: create_namespace, delete_namespace, set_variable!, 
+# Import required modules
+using ..SaddlePaths: create_namespace, delete_namespace, set_variable!,
                      get_variable, update_namespace!, eval_in_namespace,
                      vectorize_function_calls
+using ..SaddlePaths: AbstractBackend, SpectralBackend, FiniteDifferenceBackend, ProjectionBackend
+
+# Placeholder for spectral methods
 
 """
     NumericalSolution
@@ -16,20 +19,21 @@ ensuring multiple solutions can coexist without interference.
 - `namespace::Symbol` - Unique identifier for this solution's variable namespace
 - `params::Vector{<:Number}` - Parameter values
 - `steady_state::Vector{<:Number}` - Steady state values
-- `coefs::Vector{<:Number}` - Coefficients for approximation
+- `backend::AbstractBackend` - Numerical backend for function approximation
 - `error::AbstractFloat` - Current approximation error
 - `iterations::Int` - Number of iterations performed
 - `converged::Bool` - Convergence status
 
 # Lifecycle
-1. Create with `NumericalSolution(model, params)`
+1. Create with `NumericalSolution(model, params, backend)`
 2. Initialize namespace automatically
 3. Iterate to solve
 4. Clean up with `cleanup!(solution)`
 
 # Example
 ```julia
-solution = NumericalSolution(model, [α=0.3, δ=0.1, ρ=0.05])
+backend = create_spectral_backend(model, 10, (0.1, 2.0))
+solution = NumericalSolution(model, [α=0.3, δ=0.1, ρ=0.05], backend)
 # ... perform iterations ...
 cleanup!(solution)  # Releases namespace
 ```
@@ -39,49 +43,85 @@ mutable struct NumericalSolution
     namespace::Symbol  # Unique namespace identifier
     params::Vector{T} where T <: Number
     steady_state::Vector{T} where T <: Number
-    # grid::SpectralKit.AbstractGrid  # TODO: Add when SpectralKit is available
-    # basis::SpectralKit.FunctionBasis  # TODO: Add when SpectralKit is available
-    coefs::Vector{T} where T <: Number
+    backend::AbstractBackend
     error::AbstractFloat
     iterations::Int
     converged::Bool
     
     """
-        NumericalSolution(model::SaddlePath, param_values::Vector)
-    
-    Create a new numerical solution with its own isolated namespace.
-    
+        NumericalSolution(model::SaddlePath, param_values::Vector, backend::AbstractBackend)
+
+    Create a new numerical solution with its own isolated namespace and backend.
+
     # Arguments
     - `model::SaddlePath` - Model specification
     - `param_values::Vector` - Parameter values in the order of model.params
-    
+    - `backend::AbstractBackend` - Numerical backend for approximation
+
     # Example
     ```julia
     model = @model ramsey begin
         𝑑c = c(k) * (α * k^(α - 1) - δ - ρ)
         𝑑k = k^α - δ * k - c(k)
     end
-    
-    solution = NumericalSolution(model, [0.3, 0.1, 0.05])  # α, δ, ρ
+
+    backend = create_spectral_backend(model, 10, (0.1, 2.0))
+    solution = NumericalSolution(model, [0.3, 0.1, 0.05], backend)  # α, δ, ρ
     ```
     """
-    function NumericalSolution(model::SaddlePath, param_values::Vector{T}) where T <: Number
+    function NumericalSolution(model::SaddlePath, param_values::Vector{T}, backend::AbstractBackend) where T <: Number
         # Create unique namespace for this solution
         ns_id = create_namespace()
-        
+
         # Initialize parameter values in namespace
         for (name, val) in zip(model.params, param_values)
             set_variable!(ns_id, name, val)
         end
-        
-        # Create instance with default values
-        new(model, ns_id, param_values, 
+
+        # Initialize state and costate variables in namespace
+        for state_var in model.state
+            set_variable!(ns_id, state_var, zero(T))
+        end
+        for costate_var in model.costate
+            set_variable!(ns_id, costate_var, zero(T))
+        end
+
+        # Create instance with backend
+        new(model, ns_id, param_values,
             zeros(T, length(model.state) + length(model.costate)),  # steady_state
-            zeros(T, 0),  # coefs (empty initially)
+            backend,
             Inf,  # error
             0,    # iterations
             false # converged
         )
+    end
+
+    """
+        NumericalSolution(model::SaddlePath, param_values::Vector)
+
+    Create a new numerical solution with default spectral backend.
+
+    # Arguments
+    - `model::SaddlePath` - Model specification
+    - `param_values::Vector` - Parameter values in the order of model.params
+
+    # Example
+    ```julia
+    model = @model ramsey begin
+        𝑑c = c(k) * (α * k^(α - 1) - δ - ρ)
+        𝑑k = k^α - δ * k - c(k)
+    end
+
+    solution = NumericalSolution(model, [0.3, 0.1, 0.05])  # α, δ, ρ
+    ```
+    """
+    function NumericalSolution(model::SaddlePath, param_values::Vector{T}) where T <: Number
+        # Create default spectral backend (placeholder implementation)
+        basis = nothing  # Placeholder for SpectralKit basis
+        grid = collect(range(0.1, 2.0, length=10))  # Simple grid
+        coeffs = zeros(Float64, 10)  # Placeholder coefficients
+        backend = SpectralBackend(basis, grid, coeffs)
+        NumericalSolution(model, param_values, backend)
     end
 end
 
