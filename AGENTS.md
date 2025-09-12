@@ -23,6 +23,7 @@ SaddlePaths.jl/
 │       ├── examples.md       # Usage examples
 │       ├── api.md            # API reference
 │       └── theory.md         # Mathematical theory
+├── scrap/                     # Temporary test files and code snippets (not persisted)
 ├── Project.toml              # Package metadata and dependencies
 ├── Makefile                  # Build automation
 └── README.md                 # User-facing documentation
@@ -113,6 +114,12 @@ The module provides an elegant DSL that:
 - All scripts should be run from the project root directory with `julia --project=.`
 - The package uses standard Julia package structure with Project.toml
 - No manual LOAD_PATH modifications needed when using --project flag
+
+**Development Notes:**
+- The `scrap/` folder is for temporary test files and code snippets
+- Files in `scrap/` are not tracked in version control and should not be persisted
+- Use `scrap/` for experimental code, copy-pasted documentation, or test scripts
+- May contain relevant code examples or documentation for reference
 
 **Integration:**
 - Designed to work with SpectralKit.jl for spectral methods
