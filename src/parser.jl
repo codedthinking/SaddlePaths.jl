@@ -58,74 +58,31 @@ function parse_differential_equations(block::Expr)
     end
     
     # Second pass: analyze RHS to determine states, costates, and params
-    state_vars = Symbol[]
-    costate_vars = Symbol[]
-    params = Symbol[]
-    other_symbols = Symbol[]  # Functions or global variables
     
-    # Find costate variables (those that appear as function calls like c(k))
-    # FIXME: use better name, these are all function calls, not just costate
-    costate_as_functions = Set{Symbol}()
-    # FIXME: why is this a separate step? we only use this variable once in a for loop
-    for (_, rhs) in diff_eqs
-        find_function_calls!(costate_as_functions, rhs)
-    end
+    # Find all function calls in RHS expressions
+    function_calls = Set{Symbol}()
+    foreach(eq -> find_function_calls!(function_calls, eq.second), diff_eqs)
     
-    # Classify LHS variables
-    # FIXME: this may even be more readable with list comprehension or filtering
-    for var in lhs_vars
-        if var in costate_as_functions
-            push!(costate_vars, var)
-        else
-            push!(state_vars, var)
-        end
-    end
+    # Classify LHS variables based on whether they appear as functions
+    costate_vars = [var for var in lhs_vars if var in function_calls]
+    state_vars = [var for var in lhs_vars if var ∉ function_calls]
     
-    # Collect all symbols from RHS and classify them
+    # Collect all symbols from RHS
     all_rhs_symbols = Set{Symbol}()
-    # FIXME: why is this a separate step? we only use this variable once in a for loop
-    for (_, rhs) in diff_eqs
-        collect_all_symbols!(all_rhs_symbols, rhs)
-    end
+    foreach(eq -> collect_all_symbols!(all_rhs_symbols, eq.second), diff_eqs)
     
-    # Classify RHS symbols
-    # FIXME: use more Julianic syntax? comprehension or guard clause or short-circuit logic
-    for sym in all_rhs_symbols
-        if sym in lhs_vars
-            # Already classified as state or costate
-            continue
-        elseif is_greek_letter(sym)
-            # Greek letters are parameters
-            push!(params, sym)
-        else
-            # Everything else is a regular reference (function or global variable)
-            push!(other_symbols, sym)
-        end
-    end
-
-    # FIXME: this doesn't look necessary
-    sort!(params)
-    sort!(other_symbols)
+    # Classify RHS symbols that aren't LHS variables
+    remaining_symbols = setdiff(all_rhs_symbols, lhs_vars)
+    params = sort([sym for sym in remaining_symbols if is_greek_letter(sym)])
+    other_symbols = sort([sym for sym in remaining_symbols if !is_greek_letter(sym)])
     
     # Build ODEs array in correct order: state first, then costate
-    odes = Any[]
-    # FIXME: this looks way too complicated. we are extracting RHS expresssion from a list of Named Pairs
-    for var in state_vars
-        for eq in diff_eqs
-            if eq.first == var
-                push!(odes, eq.second)
-                break
-            end
-        end
-    end
-    for var in costate_vars
-        for eq in diff_eqs
-            if eq.first == var
-                push!(odes, eq.second)
-                break
-            end
-        end
-    end
+    # Create a lookup dictionary for efficiency
+    eq_dict = Dict(diff_eqs)
+    odes = vcat(
+        [eq_dict[var] for var in state_vars],
+        [eq_dict[var] for var in costate_vars]
+    )
     
     return state_vars, costate_vars, params, odes
 end
@@ -151,27 +108,35 @@ find_function_calls!(funcs, expr)
 ```
 """
 function find_function_calls!(funcs::Set{Symbol}, expr)
-    # FIXME: i am worried, this looks too easy. 
-    # - There may be different modules, like Math.exp(x)
-    # - there are inline operators, like x + y
-    # - (out of scope) there are pipes, like x|> log
-    # - (out of scope?) there is auto-vectorization, like log.(x) 
-    # BUT: these may not be relevant for costate definitions
-    # we do want to be able to parse :(c(Math.log(x) + y))
-    if expr isa Expr && expr.head == :call
-        # This is a function call
-        func_name = expr.args[1]
-        if func_name isa Symbol
-            # Check if this symbol also appears on LHS (is a variable, not a regular function)
-            push!(funcs, func_name)
-        end
-        # Recursively check arguments
-        for i in 2:length(expr.args)
-            find_function_calls!(funcs, expr.args[i])
+    if isfunctioncall(expr)
+        if expr.head == :call
+            # Regular function call f(x)
+            func_name = expr.args[1]
+            if func_name isa Symbol && !is_operator(func_name)
+                push!(funcs, func_name)
+            end
+            # Recursively check arguments
+            for i in 2:length(expr.args)
+                find_function_calls!(funcs, expr.args[i])
+            end
+        elseif expr.head == Symbol(".") && length(expr.args) >= 2 && expr.args[2] isa Expr && expr.args[2].head == :tuple
+            # Vectorized function call f.(x)
+            func_name = expr.args[1]
+            if func_name isa Symbol && !is_operator(func_name)
+                push!(funcs, func_name)
+            end
+            # Recursively check arguments in the tuple
+            for arg in expr.args[2].args
+                find_function_calls!(funcs, arg)
+            end
+        elseif expr.head in SYNTACTIC_OPERATORS
+            # Syntactic operators like && ||
+            for arg in expr.args
+                find_function_calls!(funcs, arg)
+            end
         end
     elseif expr isa Expr
         # Recursively check all subexpressions
-        # FIXME: again, this looks suspiciously simple. check how we did this in Kezdi.jl
         for arg in expr.args
             find_function_calls!(funcs, arg)
         end
@@ -188,8 +153,7 @@ Collect all symbols from an expression tree, excluding operators and built-in fu
 - `expr` - Expression tree to traverse
 
 # Excluded Symbols
-- Arithmetic operators: `+`, `-`, `*`, `/`, `^`
-- Built-in functions: `exp`, `log`, `sqrt`
+- Arithmetic operators (using Base.isoperator)
 - Special symbols: `𝑑`
 
 # Example
@@ -197,22 +161,20 @@ Collect all symbols from an expression tree, excluding operators and built-in fu
 expr = :(α * k^β - δ * k + exp(γ))
 symbols = Set{Symbol}()
 collect_all_symbols!(symbols, expr)
-# symbols = Set([:α, :k, :β, :δ, :γ])
+# symbols = Set([:α, :k, :β, :δ, :γ, :exp])
 ```
 """
 function collect_all_symbols!(symbols::Set{Symbol}, expr)
     if expr isa Symbol
-        # Skip operators
-        # FIXME: nonono! there are way more operators, check implementation in Kezdi.jl
-        # FIXME: do not special case :exp, :log, :sqrt, these are function calls anyway
-        if !in(expr, [:+, :-, :*, :/, :^, :𝑑, :exp, :log, :sqrt])
+        # Skip operators and special symbols
+        if !is_operator(expr) && expr != :𝑑
             push!(symbols, expr)
         end
     elseif expr isa Expr
         if expr.head == :call
             # For function calls, collect the function name and arguments
             func_name = expr.args[1]
-            if func_name isa Symbol && !in(func_name, [:+, :-, :*, :/, :^, :exp, :log, :sqrt])
+            if func_name isa Symbol && !is_operator(func_name)
                 push!(symbols, func_name)
             end
             for i in 2:length(expr.args)
@@ -226,6 +188,44 @@ function collect_all_symbols!(symbols::Set{Symbol}, expr)
         end
     end
 end
+
+# Greek letters used in economics
+const GREEK_CHARS = Set(['α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 
+                         'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω',
+                         'Α', 'Β', 'Γ', 'Δ', 'Ε', 'Ζ', 'Η', 'Θ', 'Ι', 'Κ', 'Λ', 'Μ',
+                         'Ν', 'Ξ', 'Ο', 'Π', 'Ρ', 'Σ', 'Τ', 'Υ', 'Φ', 'Χ', 'Ψ', 'Ω'])
+
+# Syntactic operators that require special handling
+const SYNTACTIC_OPERATORS = (:&&, :||, :+=, :-=, :*=, :/=, ://=, :\=, :^=, :÷=, :%=, :<<=, :>>=, :>>>=, :|=, :&=, :⊻=)
+
+# Helper functions for expression analysis
+"""
+    is_operator(x) -> Bool
+
+Check if a symbol is an operator (excluding dot reference).
+"""
+is_operator(::Any) = false
+is_operator(x::Symbol) = Base.isoperator(x) && x != :.
+
+"""
+    is_dotted_operator(x) -> Bool
+
+Check if a symbol is a broadcasting/vectorized operator (starts with .).
+"""
+is_dotted_operator(::Any) = false
+is_dotted_operator(x::Symbol) = is_operator(x) && length(string(x)) > 0 && first(string(x)) == '.'
+
+"""
+    isfunctioncall(expr) -> Bool
+
+Check if an expression is a function call, including operators and broadcasting.
+"""
+isfunctioncall(::Any) = false
+isfunctioncall(x::Symbol) = is_operator(x)
+isfunctioncall(x::Expr) = x.head == :call || 
+                          (x.head == Symbol(".") && x.args[1] isa Symbol && 
+                           length(x.args) >= 2 && x.args[2] isa Expr && x.args[2].head == :tuple) ||
+                          x.head in SYNTACTIC_OPERATORS
 
 """
     is_greek_letter(sym::Symbol) -> Bool
@@ -253,22 +253,10 @@ is_greek_letter(:k)      # false
 Lowercase: α β γ δ ε ζ η θ ι κ λ μ ν ξ ο π ρ σ τ υ φ χ ψ ω
 Uppercase: Α Β Γ Δ Ε Ζ Η Θ Ι Κ Λ Μ Ν Ξ Ο Π Ρ Σ Τ Υ Φ Χ Ψ Ω
 """
-function is_greek_letter(sym::Symbol)
-    # FIXME: it is more Julianic to use multiple dispatch as guard clause
+is_greek_letter(::Any) = false
+is_greek_letter(sym::Symbol) = begin
     str = string(sym)
-    isempty(str) && return false
-    
-    # Get first character as a string
-    first_char = first(str)
-    
-    # Check if it's a Greek letter (lowercase or uppercase)
-    # Common Greek letters used in economics
-    greek_chars = Set(['α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 
-                       'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω',
-                       'Α', 'Β', 'Γ', 'Δ', 'Ε', 'Ζ', 'Η', 'Θ', 'Ι', 'Κ', 'Λ', 'Μ',
-                       'Ν', 'Ξ', 'Ο', 'Π', 'Ρ', 'Σ', 'Τ', 'Υ', 'Φ', 'Χ', 'Ψ', 'Ω'])
-    
-    return first_char in greek_chars
+    !isempty(str) && first(str) in GREEK_CHARS
 end
 
 """
