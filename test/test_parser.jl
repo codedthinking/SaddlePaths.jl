@@ -48,12 +48,12 @@ import SaddlePaths: is_operator, is_dotted_operator, isfunctioncall, is_greek_le
         @test is_dotted_operator(:.*) == true
         @test is_dotted_operator(:./) == true
         @test is_dotted_operator(:.^) == true
-        @test is_dotted_operator(:(.==)) == true
-        @test is_dotted_operator(:(.!=)) == true
-        @test is_dotted_operator(:(.<=)) == true
-        @test is_dotted_operator(:(.>=)) == true
-        @test is_dotted_operator(:(.<)) == true
-        @test is_dotted_operator(:(.>)) == true
+        @test is_dotted_operator(Symbol(".==")) == true
+        @test is_dotted_operator(Symbol(".!=")) == true
+        @test is_dotted_operator(Symbol(".<=")) == true
+        @test is_dotted_operator(Symbol(".>=")) == true
+        @test is_dotted_operator(Symbol(".<")) == true
+        @test is_dotted_operator(Symbol(".>")) == true
         
         # Test non-dotted operators
         @test is_dotted_operator(:+) == false
@@ -435,5 +435,134 @@ import SaddlePaths: is_operator, is_dotted_operator, isfunctioncall, is_greek_le
         # Test parentheses preservation
         @test vectorize_function_calls(:((x + y) * z)) == :((x .+ y) .* z)
         @test vectorize_function_calls(:(x * (y + z))) == :(x .* (y .+ z))
+    end
+    
+    @testset "Edge cases and error handling" begin
+        # Test handling of invalid differential equations
+        @testset "Invalid differentials" begin
+            # Block with no valid differential equations
+            block = quote
+                x = y + z  # Not a differential equation
+                y = 2 * x  # Also not a differential
+            end
+            states, costates, params, odes = parse_differential_equations(block)
+            @test isempty(states)
+            @test isempty(costates)
+            @test isempty(params)
+            @test isempty(odes)
+            
+            # Block with mixed valid and invalid equations
+            block = quote
+                𝑑k = α * k  # Valid
+                x = y + z   # Invalid - no 𝑑
+                𝑑c = c * ρ  # Valid
+            end
+            states, costates, params, odes = parse_differential_equations(block)
+            @test states == [:k, :c]
+            @test isempty(costates)
+            @test params == [:α, :ρ]
+            @test length(odes) == 2
+        end
+        
+        @testset "Module-qualified functions" begin
+            # Test that module-qualified functions are handled
+            expr = :(Base.log(x) + MyModule.f(y))
+            funcs = Set{Symbol}()
+            find_function_calls!(funcs, expr)
+            # Module-qualified functions should not be captured as simple symbols
+            @test :log ∉ funcs
+            @test :f ∉ funcs
+            
+            # Test vectorization of module-qualified functions
+            @test vectorize_function_calls(:(Base.log(x))) == :(Base.log(x))  # Not vectorized (module qualified)
+        end
+        
+        @testset "Special numeric cases" begin
+            # Test with Inf, NaN, and special numbers
+            @test vectorize_function_calls(:(x + Inf)) == :(x .+ Inf)
+            @test vectorize_function_calls(:(NaN * x)) == :(NaN .* x)
+            @test vectorize_function_calls(:(π * x)) == :(π .* x)
+            @test vectorize_function_calls(:(ℯ^x)) == :(ℯ.^x)
+        end
+        
+        @testset "Complex nested expressions" begin
+            # Test deeply nested expressions
+            expr = :((x + y) * (z - w) / (a + b))
+            result = vectorize_function_calls(expr)
+            @test result == :((x .+ y) .* (z .- w) ./ (a .+ b))
+            
+            # Test with mixed operators and functions
+            expr = :(log(x + exp(y * z)))
+            result = vectorize_function_calls(expr)
+            @test result == :(log.(x .+ exp.(y .* z)))
+        end
+        
+        @testset "Variable classification edge cases" begin
+            # Test with subscripted variables
+            block = quote
+                𝑑k₁ = α * k₁ - c₁(k₁)
+                𝑑k₂ = β * k₂ - c₂(k₂)
+                𝑑c₁ = c₁ * ρ₁
+                𝑑c₂ = c₂ * ρ₂
+            end
+            states, costates, params, odes = parse_differential_equations(block)
+            @test states == [:k₁, :k₂]
+            @test costates == [:c₁, :c₂]
+            @test params == [:α, :β, :ρ₁, :ρ₂]
+            
+            # Test with single-letter non-Greek parameters (should be classified as other)
+            block = quote
+                𝑑x = a * x + b  # a and b are not Greek
+            end
+            states, costates, params, odes = parse_differential_equations(block)
+            @test states == [:x]
+            @test isempty(costates)
+            @test isempty(params)  # a and b are not Greek letters
+            
+            # Test with mixed Greek and Latin in variable names
+            block = quote
+                𝑑x_α = α * x_α  # Variable name contains Greek but doesn't start with it
+            end
+            states, costates, params, odes = parse_differential_equations(block)
+            @test states == [:x_α]
+            @test params == [:α]
+        end
+        
+        @testset "Expression type preservation" begin
+            # Test that non-expressions pass through unchanged
+            @test vectorize_function_calls(:x) === :x
+            @test vectorize_function_calls(1) === 1
+            @test vectorize_function_calls(1.5) === 1.5
+            @test vectorize_function_calls("string") === "string"
+            @test vectorize_function_calls(nothing) === nothing
+        end
+        
+        @testset "Already vectorized expressions" begin
+            # Test that already vectorized expressions are preserved correctly
+            expr = :(x .+ y .* z)
+            @test vectorize_function_calls(expr) == expr
+            
+            expr = :(f.(x, y) .+ g.(z))
+            @test vectorize_function_calls(expr) == expr
+            
+            # Mixed vectorized and non-vectorized
+            expr = :(f.(x) + g(y))
+            @test vectorize_function_calls(expr) == :(f.(x) .+ g.(y))
+        end
+        
+        @testset "Empty and degenerate cases" begin
+            # Empty symbol set collection
+            symbols = Set{Symbol}()
+            collect_all_symbols!(symbols, :(1 + 2))
+            @test isempty(symbols)
+            
+            # Empty function call collection
+            funcs = Set{Symbol}()
+            find_function_calls!(funcs, :(x + y + z))  # Only operators
+            @test isempty(funcs)
+            
+            # Test with expression containing only literals
+            @test vectorize_function_calls(:(1 + 2 * 3)) == :(1 .+ 2 .* 3)
+        end
     end
 end
