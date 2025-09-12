@@ -1,23 +1,25 @@
-using SaddlePaths
 using Documenter
+push!(LOAD_PATH, "../src/")
+using SaddlePaths
 
-DocMeta.setdocmeta!(SaddlePaths, :DocTestSetup, :(using SaddlePaths); recursive=true)
-
-makedocs(;
-    modules=[SaddlePaths],
-    authors="Koren",
-    sitename="SaddlePaths.jl",
-    format=Documenter.HTML(;
-        canonical="https://koren.github.io/SaddlePaths.jl",
-        edit_link="main",
-        assets=String[],
+makedocs(
+    sitename = "SaddlePaths.jl",
+    format = Documenter.HTML(
+        prettyurls = get(ENV, "CI", "false") == "true",
+        canonical = "https://yourusername.github.io/SaddlePaths.jl",
+        assets = String[],
     ),
-    pages=[
+    modules = [SaddlePaths],
+    pages = [
         "Home" => "index.md",
-    ],
+        "Getting Started" => "getting_started.md",
+        "DSL Reference" => "dsl.md",
+        "Examples" => "examples.md",
+        "API Reference" => "api.md",
+        "Theory" => "theory.md",
+    ]
 )
 
-deploydocs(;
-    repo="github.com/koren/SaddlePaths.jl",
-    devbranch="main",
+deploydocs(
+    repo = "github.com/yourusername/SaddlePaths.jl.git",
 )

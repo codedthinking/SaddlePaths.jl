@@ -1,71 +1,62 @@
+# SaddlePaths.jl Documentation
+
 ```@meta
 CurrentModule = SaddlePaths
 ```
 
-# SaddlePaths.jl
-
-A Julia package for solving saddle-path problems in continuous-time macroeconomic models using stable manifold methods.
-
 ## Overview
 
-SaddlePaths.jl provides an ergonomic domain-specific language (DSL) for declaring continuous-time macroeconomic models with Unicode notation, along with efficient numerical methods for computing stable manifold policy functions via Chebyshev polynomials and Smolyak sparse grids.
+SaddlePaths.jl is a Julia package for defining and solving saddle path problems in dynamic optimization. It provides a domain-specific language (DSL) for specifying systems of differential equations with automatic classification of variables into states, costates, and parameters.
 
 ## Features
 
-- **Ergonomic DSL**: Write models naturally using Unicode notation (e.g., `𝒹k` for time derivatives, Greek letters for parameters)
-- **Symbolic Core**: Automatic generation of Jacobians and Hessians using Symbolics.jl/ModelingToolkit.jl
-- **Steady State Analysis**: Built-in tools for analyzing steady states and checking stability
-- **Stable Manifold Solver**: Approximation of policy functions `c(k)` using spectral methods
-- **Simulation**: Integration of deterministic paths using DifferentialEquations.jl
+- **Intuitive DSL**: Define models using natural mathematical notation with Unicode characters
+- **Automatic Classification**: Intelligently identifies state variables, costate/control variables, and parameters
+- **Flexible Notation**: Support for both standard and functional notation for costates
+- **Greek Letter Convention**: Automatic parameter detection based on Greek letter naming
+- **Expression Preservation**: Maintains Julia AST for further symbolic or numeric processing
 
-## Installation
-
-```julia
-using Pkg
-Pkg.add("SaddlePaths")
-```
-
-## Quick Start
+## Quick Example
 
 ```julia
 using SaddlePaths
 
-# Define a model using the DSL
-@model begin
-  𝒹k = α*k - c
-  𝒹c = β*(α*k - c) - δ*c  
+# Define a Ramsey growth model
+@model ramsey begin
+    𝑑c = c(k) * (α * k^(α - 1) - δ - ρ)
+    𝑑k = k^α - δ * k - c(k)
 end
 
-# Specify steady state functions
-k_ss(α,β,δ) = α/δ
-c_ss(α,β,δ) = α*k_ss(α,β,δ)
-
-# Compile and analyze
-M = compile_model(@locals)
-A = analyze(M; θ=(α=0.3, β=0.99, δ=0.1))
-
-# Solve for policy function
-π = solve_policy(M; θ=(α=0.3, β=0.99, δ=0.1), 
-                 domain=:auto, order=7, smolyak_level=3)
-
-# Simulate trajectory
-traj = simulate(M, π; θ=(α=0.3, β=0.99, δ=0.1), 
-                k0=0.5, T=100.0)
+# Access model components
+println("States: ", ramsey.state)      # [:k]
+println("Costates: ", ramsey.costate)  # [:c]
+println("Parameters: ", ramsey.params) # [:α, :δ, :ρ]
 ```
 
-## DSL Syntax
+## Installation
 
-The package uses Unicode characters to distinguish between different types of variables:
+Since this is part of the babyboom project, add the source to your load path:
 
-- **State variables**: Declared using `𝒹` prefix (e.g., `𝒹k = ...`)
-- **Parameters**: First character is Greek (e.g., `α`, `β`, `δ`)
-- **Control variables**: Latin identifiers not declared as states
+```julia
+push!(LOAD_PATH, "path/to/babyboom/src")
+using SaddlePaths
+```
 
-## API Reference
+For standalone use, you would typically install via:
+
+```julia
+using Pkg
+Pkg.add("SaddlePaths")  # Not yet registered
+```
+
+## Contents
+
+```@contents
+Pages = ["getting_started.md", "dsl.md", "examples.md", "api.md", "theory.md"]
+Depth = 2
+```
+
+## Index
 
 ```@index
-```
-
-```@autodocs
-Modules = [SaddlePaths]
 ```
