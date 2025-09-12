@@ -1,7 +1,13 @@
 using SaddlePaths
 using Test
 
+# Include test files
+include("test_parser.jl")
+include("test_saddlepaths.jl")
+
 @testset "SaddlePaths.jl" begin
+    # Parser tests are in test_parser.jl
+    # Model tests are in test_saddlepaths.jl
     
     @testset "SaddlePath struct" begin
         @testset "Basic construction" begin

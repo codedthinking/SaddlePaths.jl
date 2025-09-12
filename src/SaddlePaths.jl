@@ -23,12 +23,8 @@ end
 ```
 """
 module SaddlePaths
-using SpectralKit
 
-include("parser.jl")
-include("computation.jl")
-
-export @model, SaddlePath, solve_saddle_path
+export @model, SaddlePath, solve_saddle_path, SymbolicSolution, solve_steady_state
 
 """
     SaddlePath
@@ -206,6 +202,10 @@ function solve_saddle_path(model::SaddlePath; kwargs...)
     @info "Solving saddle path model" model.state model.costate model.params
     return nothing
 end
+
+# Include other module files after defining the structs they depend on
+include("parser.jl")
+include("computation.jl")
 
 """
 Store symbolic solutions for steady-state relationship between state variables and parameters.
