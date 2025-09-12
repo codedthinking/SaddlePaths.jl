@@ -3,7 +3,8 @@ using SaddlePaths
 
 # Import internal functions for testing
 import SaddlePaths: is_operator, is_dotted_operator, isfunctioncall, is_greek_letter,
-                    collect_all_symbols!, find_function_calls!, parse_differential_equations
+                    collect_all_symbols!, find_function_calls!, parse_differential_equations,
+                    vectorize_function_calls
 
 @testset "Parser Functions" begin
     
@@ -374,5 +375,65 @@ import SaddlePaths: is_operator, is_dotted_operator, isfunctioncall, is_greek_le
         @test odes[2] == :(c + d(c))  # Second state
         @test odes[3] == :(b * α)     # First costate
         @test odes[4] == :(d * β)     # Second costate
+    end
+    
+    @testset "vectorize_function_calls" begin
+        # Test basic operators
+        @test vectorize_function_calls(:(x + y)) == :(x .+ y)
+        @test vectorize_function_calls(:(x - y)) == :(x .- y)
+        @test vectorize_function_calls(:(x * y)) == :(x .* y)
+        @test vectorize_function_calls(:(x / y)) == :(x ./ y)
+        @test vectorize_function_calls(:(x^2)) == :(x.^2)
+        
+        # Test function calls
+        @test vectorize_function_calls(:(log(x))) == :(log.(x))
+        @test vectorize_function_calls(:(exp(x))) == :(exp.(x))
+        @test vectorize_function_calls(:(sin(x))) == :(sin.(x))
+        
+        # Test compound expressions
+        @test vectorize_function_calls(:(log(x) + log(y))) == :(log.(x) .+ log.(y))
+        @test vectorize_function_calls(:(x^2 + y^2)) == :(x.^2 .+ y.^2)
+        @test vectorize_function_calls(:(k^α - δ * k)) == :(k.^α .- δ .* k)
+        
+        # Test nested function calls
+        @test vectorize_function_calls(:(log(exp(x)))) == :(log.(exp.(x)))
+        @test vectorize_function_calls(:(sin(cos(x)))) == :(sin.(cos.(x)))
+        
+        # Test already vectorized operations (should be preserved)
+        @test vectorize_function_calls(:(log.(x))) == :(log.(x))
+        @test vectorize_function_calls(:(x .+ y)) == :(x .+ y)
+        @test vectorize_function_calls(:(x.^2)) == :(x.^2)
+        
+        # Test syntactic operators
+        @test vectorize_function_calls(:(x && y)) == :(x .&& y)
+        @test vectorize_function_calls(:(x || y)) == :(x .|| y)
+        
+        # Test comparison operators
+        @test vectorize_function_calls(:(x < y)) == :(x .< y)
+        @test vectorize_function_calls(:(x > y)) == :(x .> y)
+        @test vectorize_function_calls(:(x == y)) == :(x .== y)
+        @test vectorize_function_calls(:(x != y)) == :(x .!= y)
+        @test vectorize_function_calls(:(x <= y)) == :(x .<= y)
+        @test vectorize_function_calls(:(x >= y)) == :(x .>= y)
+        
+        # Test with multiple arguments
+        @test vectorize_function_calls(:(f(x, y))) == :(f.(x, y))
+        @test vectorize_function_calls(:(max(x, y))) == :(max.(x, y))
+        
+        # Test complex economics expression
+        @test vectorize_function_calls(:(c(k) * (α * k^(α - 1) - δ - ρ))) == 
+              :(c.(k) .* (α .* k.^(α .- 1) .- δ .- ρ))
+        
+        # Test that symbols alone are not modified
+        @test vectorize_function_calls(:x) == :x
+        @test vectorize_function_calls(:α) == :α
+        
+        # Test with numbers
+        @test vectorize_function_calls(:(1 + x)) == :(1 .+ x)
+        @test vectorize_function_calls(:(x + 2.5)) == :(x .+ 2.5)
+        
+        # Test parentheses preservation
+        @test vectorize_function_calls(:((x + y) * z)) == :((x .+ y) .* z)
+        @test vectorize_function_calls(:(x * (y + z))) == :(x .* (y .+ z))
     end
 end

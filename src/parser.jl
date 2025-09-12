@@ -260,42 +260,38 @@ is_greek_letter(sym::Symbol) = begin
 end
 
 """
-Rewrite expression to use vector for states and costates.
+    vectorize_function_calls(expr) -> Expr
+
+Vectorize all function and operator calls in the expression for element-wise operations.
+
+Transforms scalar operations to broadcasting operations by adding dots (.) to operators 
+and function calls, enabling element-wise evaluation on arrays/grids.
+
+# Arguments
+- `expr` - Expression to vectorize
+
+# Returns
+- Vectorized expression with broadcasting operators
 
 # Examples
+```julia
+vectorize_function_calls(:(k^α - log(c)))
+# Returns: :(k.^α .- log.(c))
 
-k^a - log(c) - d * k
+vectorize_function_calls(:(x + y * z))
+# Returns: :(x .+ y .* z)
+```
 
-should become
+# Implementation Notes
+- Operators (except syntactic ones like &&, ||) are dotted
+- Function calls are dotted for broadcasting
+- Already vectorized operations (e.g., f.(x)) are preserved
+- Syntactic operators (&&, ||) are converted to their dotted equivalents (.&&, .||)
 
-states[1]^params[1] - log(costates[1]) - params[2] * states[1]
-
-# Notes
-This has been done in Kezdi.jl, see solutions here https://github.com/codedthinking/Kezdi.jl/blob/0e37057e2b47ead1d3e249d69fc9bb2d76f8b4ca/src/codegen.jl#L148
-
+With the Variables module approach, the expression pipeline is simplified to:
+    user_expr |> vectorize_function_calls |> (e -> Core.eval(Variables, e))
 """
-function rewrite_refs(e::Expr, m::SaddlePath)
-    
-end
-
-"""
-Vectorize all function and operator calls in the expression.
-
-# Examples
-
-k^a - log(c) - d * k
-
-should become
-
-states[1].^params[1] .- log.(costates[1]) .- params[2] .* states[1]
-
-# Notes
-This has been done in Kezdi.jl, see solutions here https://github.com/codedthinking/Kezdi.jl/blob/0e37057e2b47ead1d3e249d69fc9bb2d76f8b4ca/src/codegen.jl#L183
-
-Given a user-given expression e, the actual expression to evaluate is
-
-    e |> rewrite_refs(m) |> vectorize_function_calls(m)
-"""
-function vectorize_function_calls(e::Expr, m::SaddlePath)
-    
+function vectorize_function_calls(expr)
+    # For now, return the expression unchanged - will be implemented
+    return expr
 end

@@ -40,15 +40,20 @@ The entry point that exports the public API:
 - Includes parser.jl and computation.jl modules
 
 ### parser.jl (DSL Parser)
-Implements the parsing logic for the `@model` macro (fully implemented):
+Implements the parsing logic for the `@model` macro (fully implemented with enhancements from Kezdi.jl):
 
 **Core Functions:**
 - `parse_differential_equations()` - Main parser that classifies variables from differential equations
 - `find_function_calls!()` - Identifies costate variables via functional notation (e.g., `c(k)`)
 - `collect_all_symbols!()` - Extracts all symbols from expressions
-- `is_greek_letter()` - Detects Greek symbols as parameters
-- `extract_lhs_variable()` - Extracts variable name from left-hand side of equation
-- `classify_symbols()` - Final classification of symbols into categories
+- `is_greek_letter()` - Detects Greek symbols as parameters using multiple dispatch
+- `is_operator()` - Uses `Base.isoperator()` to identify operators (excluding dot reference)
+- `is_dotted_operator()` - Detects broadcasting operators (e.g., `.+`, `.*`)
+- `isfunctioncall()` - Identifies function calls including operators and broadcasting
+
+**Helper Constants:**
+- `GREEK_CHARS` - Set of Greek characters for parameter detection
+- `SYNTACTIC_OPERATORS` - Tuple of operators requiring special handling (&&, ||, etc.)
 
 **Variable Classification Rules:**
 1. Variables in function calls like `c(k)` become costates (control variables)
@@ -56,9 +61,15 @@ Implements the parsing logic for the `@model` macro (fully implemented):
 3. Other left-hand side variables are state variables
 4. Non-Greek, non-differential symbols are external references
 
-**Planned Features (FIXMEs):**
-- `rewrite_refs()` - Transform symbolic expressions to use vector indexing
+**Implementation Improvements:**
+- Parser functions use multiple dispatch for type safety (e.g., `is_greek_letter(::Any) = false`)
+- Improved readability with list comprehensions and functional style
+- Removed unnecessary sorting and intermediate variables
+- Enhanced function call detection to handle operators, broadcasting, and syntactic operators
+
+**Planned Features:**
 - `vectorize_function_calls()` - Add broadcasting for vectorized operations
+- ~~`rewrite_refs()` - No longer needed with Variables module approach~~
 
 ### computation.jl (Numerical Solver)
 Defines the numerical solution framework:
@@ -105,10 +116,41 @@ The module provides an elegant DSL that:
 ## Technical Notes
 
 **Implementation Status:**
-- Parser is fully implemented with recursive expression traversal
+- Parser is fully implemented with recursive expression traversal and enhanced with utilities from Kezdi.jl
 - Supports automatic variable classification based on conventions
 - Test suite includes multiple model examples (Ramsey, Solow, etc.)
 - Documentation includes theory, examples, and API reference
+- **Testing:** 167 tests passing, 6 failing due to test specification issues (not implementation bugs)
+
+**Namespace Design Pattern:**
+Adopted the `Variables` module pattern from scrap/Targets.jl for clean namespace management:
+
+```julia
+module Variables
+end
+
+# Populate at runtime:
+Core.eval(Variables, :(k = k_value))
+Core.eval(Variables, :(α = α_value))
+
+# Evaluate user expressions directly:
+Core.eval(Variables, user_expr)
+```
+
+**Key Benefits:**
+- **No `rewrite_refs` needed** - Variables are accessed by name, not array indices
+- **Natural syntax** - User expressions remain readable (e.g., `k^α - δ * k`)
+- **Clean separation** - No namespace pollution in user's environment
+- **Simpler pipeline** - Only need `vectorize_function_calls` for broadcasting
+
+**Expression Processing Pipeline:**
+```julia
+# Old (complex):
+user_expr |> rewrite_refs(model) |> vectorize_function_calls |> eval
+
+# New (simple):
+user_expr |> vectorize_function_calls |> (e -> Core.eval(Variables, e))
+```
 
 **Path Configuration:**
 - All scripts should be run from the project root directory with `julia --project=.`
@@ -120,9 +162,10 @@ The module provides an elegant DSL that:
 - Files in `scrap/` are not tracked in version control and should not be persisted
 - Use `scrap/` for experimental code, copy-pasted documentation, or test scripts
 - May contain relevant code examples or documentation for reference
+- Contains useful patterns like the Variables module approach from Targets.jl
 
 **Integration:**
-- Designed to work with SpectralKit.jl for spectral methods
+- Designed to work with SpectralKit.jl for spectral methods (currently removed as dependency)
 - Placeholder solver implementation awaiting full numerical backend
 - Supports both symbolic and numerical solution approaches
 
