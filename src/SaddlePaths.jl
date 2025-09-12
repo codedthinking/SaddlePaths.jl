@@ -27,6 +27,7 @@ module SaddlePaths
 export @model, SaddlePath, solve_saddle_path, SymbolicSolution, solve_steady_state
 export AbstractBackend, SpectralBackend, FiniteDifferenceBackend, ProjectionBackend
 export NumericalSolution, cleanup!, evaluate_ode, evaluate_all_odes
+export grid, collocation_matrix, costate, ∇costate
 
 """
     SaddlePath
