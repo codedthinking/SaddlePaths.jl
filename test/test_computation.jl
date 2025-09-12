@@ -93,6 +93,210 @@ import SaddlePaths: NumericalSolution, cleanup!
         end
     end
 
+    @testset "State and Costate Variables in Namespace" begin
+        @testset "State variables are stored in namespace" begin
+            model = @model simple_state begin
+                𝑑k = α * k - δ * k
+            end
+
+            solution = NumericalSolution(model, [0.3, 0.1])  # α, δ
+
+            # Check that state variables are accessible in the namespace
+            @test get_variable(solution.namespace, :k) == 0.0  # Should be initialized to zero
+
+            # Clean up
+            cleanup!(solution)
+        end
+
+        @testset "Costate variables are stored in namespace" begin
+            model = @model simple_costate begin
+                𝑑c = c(k) * α
+                𝑑k = k - c(k)
+            end
+
+            solution = NumericalSolution(model, [0.3])  # α
+
+            # Check that costate variables are accessible in the namespace
+            @test get_variable(solution.namespace, :c) == 0.0  # Should be initialized to zero
+
+            # Clean up
+            cleanup!(solution)
+        end
+
+        @testset "Multiple state variables in namespace" begin
+            model = @model multi_state begin
+                𝑑k₁ = α * k₁ - δ * k₁
+                𝑑k₂ = β * k₂ - γ * k₂
+            end
+
+            solution = NumericalSolution(model, [0.3, 0.5, 0.1, 0.2])  # α, β, δ, γ
+
+            # Check that all state variables are accessible in the namespace
+            @test get_variable(solution.namespace, :k₁) == 0.0
+            @test get_variable(solution.namespace, :k₂) == 0.0
+
+            # Clean up
+            cleanup!(solution)
+        end
+
+        @testset "Multiple costate variables in namespace" begin
+            model = @model multi_costate begin
+                𝑑c₁ = c₁(k₁) * α
+                𝑑c₂ = c₂(k₂) * β
+                𝑑k₁ = k₁ - c₁(k₁)
+                𝑑k₂ = k₂ - c₂(k₂)
+            end
+
+            solution = NumericalSolution(model, [0.3, 0.5])  # α, β
+
+            # Check that all costate variables are accessible in the namespace
+            @test get_variable(solution.namespace, :c₁) == 0.0
+            @test get_variable(solution.namespace, :c₂) == 0.0
+
+            # Clean up
+            cleanup!(solution)
+        end
+
+        @testset "State and costate variables are isolated between solutions" begin
+            model = @model isolation_test begin
+                𝑑c = c(k) * α
+                𝑑k = k - c(k)
+            end
+
+            solution1 = NumericalSolution(model, [0.3])
+            solution2 = NumericalSolution(model, [0.4])
+
+            # Check that state and costate variables are isolated
+            @test get_variable(solution1.namespace, :k) == 0.0
+            @test get_variable(solution2.namespace, :k) == 0.0
+            @test get_variable(solution1.namespace, :c) == 0.0
+            @test get_variable(solution2.namespace, :c) == 0.0
+
+            # Modify one solution's variables and ensure isolation
+            set_variable!(solution1.namespace, :k, 1.5)
+            set_variable!(solution1.namespace, :c, 0.8)
+
+            @test get_variable(solution1.namespace, :k) == 1.5
+            @test get_variable(solution1.namespace, :c) == 0.8
+            @test get_variable(solution2.namespace, :k) == 0.0  # Should remain unchanged
+            @test get_variable(solution2.namespace, :c) == 0.0  # Should remain unchanged
+
+            # Clean up
+            cleanup!(solution1)
+            cleanup!(solution2)
+        end
+
+        @testset "State and costate variables can be updated and retrieved" begin
+            model = @model update_test begin
+                𝑑c = c(k) * α
+                𝑑k = k - c(k)
+            end
+
+            solution = NumericalSolution(model, [0.3])
+
+            # Update state and costate variables
+            set_variable!(solution.namespace, :k, 2.5)
+            set_variable!(solution.namespace, :c, 1.2)
+
+            # Verify they can be retrieved correctly
+            @test get_variable(solution.namespace, :k) == 2.5
+            @test get_variable(solution.namespace, :c) == 1.2
+
+            # Update again with different values
+            set_variable!(solution.namespace, :k, 3.7)
+            set_variable!(solution.namespace, :c, 2.1)
+
+            @test get_variable(solution.namespace, :k) == 3.7
+            @test get_variable(solution.namespace, :c) == 2.1
+
+            # Clean up
+            cleanup!(solution)
+        end
+
+        @testset "State and costate variables work with different types" begin
+            model = @model type_test begin
+                𝑑c = c(k) * α
+                𝑑k = k - c(k)
+            end
+
+            # Test with integer parameters
+            solution1 = NumericalSolution(model, [1])
+            @test get_variable(solution1.namespace, :k) == 0.0
+            @test get_variable(solution1.namespace, :c) == 0.0
+            cleanup!(solution1)
+
+            # Test with float parameters
+            solution2 = NumericalSolution(model, [1.5])
+            @test get_variable(solution2.namespace, :k) == 0.0
+            @test get_variable(solution2.namespace, :c) == 0.0
+            cleanup!(solution2)
+        end
+
+        @testset "Complex model with multiple states and costates" begin
+            model = @model complex_model begin
+                𝑑c₁ = c₁(k₁) * α
+                𝑑c₂ = c₂(k₂) * β
+                𝑑k₁ = k₁ - c₁(k₁) - δ * k₁
+                𝑑k₂ = k₂ - c₂(k₂) - γ * k₂
+            end
+
+            solution = NumericalSolution(model, [0.3, 0.5, 0.1, 0.2])  # α, β, δ, γ
+
+            # Check all state variables
+            @test get_variable(solution.namespace, :k₁) == 0.0
+            @test get_variable(solution.namespace, :k₂) == 0.0
+
+            # Check all costate variables
+            @test get_variable(solution.namespace, :c₁) == 0.0
+            @test get_variable(solution.namespace, :c₂) == 0.0
+
+            # Check parameters are also there
+            @test get_variable(solution.namespace, :α) == 0.3
+            @test get_variable(solution.namespace, :β) == 0.5
+            @test get_variable(solution.namespace, :δ) == 0.1
+            @test get_variable(solution.namespace, :γ) == 0.2
+
+            # Clean up
+            cleanup!(solution)
+        end
+
+        @testset "State-only model (no costates)" begin
+            model = @model state_only begin
+                𝑑k = α * k - δ * k
+                𝑑h = β * h - γ * h
+            end
+
+            solution = NumericalSolution(model, [0.3, 0.5, 0.1, 0.2])  # α, β, δ, γ
+
+            # Check state variables are present
+            @test get_variable(solution.namespace, :k) == 0.0
+            @test get_variable(solution.namespace, :h) == 0.0
+
+            # Verify no costate variables (should not exist)
+            @test isempty(model.costate)
+
+            # Clean up
+            cleanup!(solution)
+        end
+
+        @testset "Costate-only model (no states)" begin
+            model = @model costate_only begin
+                𝑑c = c(x) * α
+            end
+
+            solution = NumericalSolution(model, [0.3])  # α
+
+            # Check costate variable is present
+            @test get_variable(solution.namespace, :c) == 0.0
+
+            # Check that x is not treated as a state (it's just a reference in the costate)
+            @test isempty(model.state)
+
+            # Clean up
+            cleanup!(solution)
+        end
+    end
+
     @testset "Cleanup Functionality" begin
         model = @model simple begin
             𝑑k = α * k - δ * k
