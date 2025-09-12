@@ -3,6 +3,9 @@ uuid = "871ff458-9e65-4f8e-a9a5-6c0d437cc13a"
 authors = ["Koren"]
 version = "0.1.0-DEV"
 
+[deps]
+SpectralKit = "5c252ae7-b5b6-46ab-a016-b0e3d78320b7"
+
 [compat]
 julia = "1.10"
 

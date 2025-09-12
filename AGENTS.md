@@ -11,11 +11,18 @@ SaddlePaths.jl/
 │   ├── parser.jl              # DSL Parser implementation
 │   └── computation.jl         # Numerical solver framework
 ├── test/
-│   └── runtests.jl           # Test suite
+│   ├── runtests.jl           # Test suite
+│   ├── test_saddlepaths.jl  # Model parsing tests
+│   └── show_docs.jl          # Documentation display utility
 ├── docs/
 │   ├── make.jl               # Documentation builder
 │   └── src/
-│       └── index.md          # Documentation homepage
+│       ├── index.md          # Documentation homepage
+│       ├── getting_started.md # Quick start guide
+│       ├── dsl.md            # DSL reference
+│       ├── examples.md       # Usage examples
+│       ├── api.md            # API reference
+│       └── theory.md         # Mathematical theory
 ├── Project.toml              # Package metadata and dependencies
 ├── Makefile                  # Build automation
 └── README.md                 # User-facing documentation
@@ -29,15 +36,18 @@ The entry point that exports the public API:
 - `SaddlePath` struct for model representation
 - `solve_saddle_path` function for numerical solutions
 - Integrates with SpectralKit.jl for numerical methods
+- Includes parser.jl and computation.jl modules
 
 ### parser.jl (DSL Parser)
-Implements the parsing logic for the `@model` macro:
+Implements the parsing logic for the `@model` macro (fully implemented):
 
 **Core Functions:**
 - `parse_differential_equations()` - Main parser that classifies variables from differential equations
 - `find_function_calls!()` - Identifies costate variables via functional notation (e.g., `c(k)`)
 - `collect_all_symbols!()` - Extracts all symbols from expressions
 - `is_greek_letter()` - Detects Greek symbols as parameters
+- `extract_lhs_variable()` - Extracts variable name from left-hand side of equation
+- `classify_symbols()` - Final classification of symbols into categories
 
 **Variable Classification Rules:**
 1. Variables in function calls like `c(k)` become costates (control variables)
@@ -93,12 +103,16 @@ The module provides an elegant DSL that:
 
 ## Technical Notes
 
-**Code Quality Issues (FIXMEs):**
-- Parser uses overly simple recursion for expression traversal
-- Missing support for module-qualified functions (e.g., `Math.exp`)
-- Operator detection is incomplete (only basic arithmetic)
-- Complex list comprehensions could improve readability
-- Need better handling of vectorized operations
+**Implementation Status:**
+- Parser is fully implemented with recursive expression traversal
+- Supports automatic variable classification based on conventions
+- Test suite includes multiple model examples (Ramsey, Solow, etc.)
+- Documentation includes theory, examples, and API reference
+
+**Path Configuration:**
+- All scripts should be run from the project root directory with `julia --project=.`
+- The package uses standard Julia package structure with Project.toml
+- No manual LOAD_PATH modifications needed when using --project flag
 
 **Integration:**
 - Designed to work with SpectralKit.jl for spectral methods

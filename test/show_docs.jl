@@ -1,6 +1,5 @@
 #!/usr/bin/env julia
 
-push!(LOAD_PATH, "../src")
 using SaddlePaths
 
 # Show module documentation

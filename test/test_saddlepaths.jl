@@ -1,6 +1,5 @@
 #!/usr/bin/env julia
 
-push!(LOAD_PATH, "../src")
 using SaddlePaths
 
 # Test 1: Ramsey model with costate as function
