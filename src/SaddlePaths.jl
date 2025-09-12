@@ -205,6 +205,7 @@ end
 
 # Include other module files after defining the structs they depend on
 include("parser.jl")
+include("namespace.jl")
 include("computation.jl")
 
 """

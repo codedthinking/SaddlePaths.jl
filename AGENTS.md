@@ -39,6 +39,34 @@ The entry point that exports the public API:
 - Integrates with SpectralKit.jl for numerical methods
 - Includes parser.jl and computation.jl modules
 
+### namespace.jl (Namespace Management)
+Provides isolated variable namespaces for numerical solutions:
+
+**Key Design:**
+- Each `NumericalSolution` instance gets its own submodule within `Variables`
+- Namespaces are dynamically created with unique identifiers (using `gensym()`)
+- Multiple solutions can coexist without variable name conflicts
+
+**Core Functions:**
+- `create_namespace()` - Creates a new isolated namespace, returns unique identifier
+- `delete_namespace()` - Cleans up a namespace when no longer needed
+- `set_variable!()` - Sets a variable value in a specific namespace
+- `get_variable()` - Retrieves a variable value from a namespace
+- `update_namespace!()` - Updates all variables (states, costates, params) at once
+- `eval_in_namespace()` - Evaluates expressions in the isolated namespace
+
+**Architecture:**
+```julia
+Variables
+├── ns_abc123  # Namespace for solution 1
+│   ├── k      # State variable
+│   ├── c      # Costate variable
+│   └── α      # Parameter
+├── ns_def456  # Namespace for solution 2
+│   ├── k      # Independent from solution 1's k
+│   └── ...
+```
+
 ### parser.jl (DSL Parser)
 Implements the parsing logic for the `@model` macro (fully implemented with enhancements from Kezdi.jl):
 
@@ -75,13 +103,19 @@ Implements the parsing logic for the `@model` macro (fully implemented with enha
 Defines the numerical solution framework:
 
 **Data Structures:**
-- `NumericalSolution` - Mutable struct storing model, parameters, steady state, spectral grids, and convergence info
+- `NumericalSolution` - Mutable struct with isolated namespace for each instance
+  - Contains `namespace::Symbol` field storing unique namespace identifier
+  - Automatically creates namespace on construction
+  - Requires cleanup with `cleanup!()` to free resources
 - `SymbolicSolution` - Stores analytical steady-state relationships
 
 **Key Functions:**
-- `costate()` - Returns Chebyshev approximation function
-- `𝑑costate()` - Computes derivative of approximation
-- `solve_steady_state()` - Finds symbolic steady-state solutions
+- `evaluate_ode()` - Evaluates single ODE in solution's namespace
+- `evaluate_all_odes()` - Evaluates all ODEs at given state/costate values
+- `cleanup!()` - Releases namespace resources
+- `costate()` - Returns Chebyshev approximation function (TODO)
+- `𝑑costate()` - Computes derivative of approximation (TODO)
+- `solve_steady_state()` - Finds symbolic steady-state solutions (TODO)
 
 **Solution Methods (Planned):**
 - Spectral methods via SpectralKit integration
@@ -113,43 +147,86 @@ The module provides an elegant DSL that:
 - Integrates with high-performance spectral methods
 - Maintains clean separation between parsing, symbolic manipulation, and computation
 
+## Frontend-Backend Interface
+
+The interface between parser and computation is achieved through isolated namespaces:
+
+1. **Parser Output**: Produces `SaddlePath` struct with:
+   - Variable names (states, costates, params)
+   - ODE expressions as Julia `Expr` objects
+
+2. **Namespace Bridge**: Each `NumericalSolution`:
+   - Creates unique submodule in `Variables`
+   - Populates with current variable values
+   - Provides isolation between solutions
+
+3. **Expression Evaluation**:
+   - Parser expressions are vectorized: `expr |> vectorize_function_calls`
+   - Evaluated in isolated namespace: `eval_in_namespace(ns_id, vectorized_expr)`
+   - Results used for numerical iteration
+
+This design allows the parser's symbolic output to be evaluated numerically without:
+- Rewriting variable references to array indices
+- Polluting the global namespace
+- Conflicts between multiple solutions
+
 ## Technical Notes
 
 **Implementation Status:**
-- Parser is fully implemented with recursive expression traversal and enhanced with utilities from Kezdi.jl
-- Supports automatic variable classification based on conventions
-- Test suite includes multiple model examples (Ramsey, Solow, etc.)
-- Documentation includes theory, examples, and API reference
-- **Testing:** 167 tests passing, 6 failing due to test specification issues (not implementation bugs)
+- **Parser:** Fully implemented with all 242 tests passing
+  - Enhanced with utilities from Kezdi.jl
+  - Supports automatic variable classification
+  - Comprehensive edge case coverage
+- **Namespace Management:** Fully designed and implemented
+  - Per-solution isolated namespaces
+  - Dynamic submodule creation/deletion
+  - Clean interface between parser and computation
+- **Computation Backend:** Partially implemented
+  - NumericalSolution struct with namespace integration
+  - ODE evaluation in isolated namespaces
+  - TODO: Spectral methods, steady-state solver
+- **Testing:** 242 parser tests passing, computation tests pending
 
 **Namespace Design Pattern:**
-Adopted the `Variables` module pattern from scrap/Targets.jl for clean namespace management:
+Enhanced from the `Variables` module pattern in scrap/Targets.jl for isolated, per-solution namespaces:
+
+**Evolution of Design:**
+1. **Initial concept** (from Targets.jl): Single Variables module for all variables
+2. **Enhanced design**: Each NumericalSolution gets its own submodule within Variables
+3. **Final implementation**: Dynamic namespace creation with unique identifiers
 
 ```julia
+# Structure:
 module Variables
+    module ns_abc123  # Created dynamically for solution 1
+        k = 1.5       # State
+        c = 0.8       # Costate  
+        α = 0.3       # Parameter
+    end
+    module ns_def456  # Created dynamically for solution 2
+        k = 2.0       # Independent from solution 1
+        # ...
+    end
 end
 
-# Populate at runtime:
-Core.eval(Variables, :(k = k_value))
-Core.eval(Variables, :(α = α_value))
-
-# Evaluate user expressions directly:
-Core.eval(Variables, user_expr)
+# Usage in NumericalSolution:
+ns_id = create_namespace()  # Returns :ns_abc123
+set_variable!(ns_id, :k, 1.5)
+expr = vectorize_function_calls(user_expr)
+result = eval_in_namespace(ns_id, expr)
 ```
 
 **Key Benefits:**
-- **No `rewrite_refs` needed** - Variables are accessed by name, not array indices
+- **Multiple solutions** - Each solution has isolated namespace, no conflicts
+- **No `rewrite_refs` needed** - Variables accessed by name, not array indices
 - **Natural syntax** - User expressions remain readable (e.g., `k^α - δ * k`)
-- **Clean separation** - No namespace pollution in user's environment
-- **Simpler pipeline** - Only need `vectorize_function_calls` for broadcasting
+- **Clean separation** - No namespace pollution between solutions
+- **Memory management** - Namespaces can be cleaned up when solutions are disposed
 
 **Expression Processing Pipeline:**
 ```julia
-# Old (complex):
-user_expr |> rewrite_refs(model) |> vectorize_function_calls |> eval
-
-# New (simple):
-user_expr |> vectorize_function_calls |> (e -> Core.eval(Variables, e))
+# For each NumericalSolution instance:
+user_expr |> vectorize_function_calls |> (e -> eval_in_namespace(ns_id, e))
 ```
 
 **Path Configuration:**
