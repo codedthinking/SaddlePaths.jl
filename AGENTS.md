@@ -2,6 +2,25 @@
 
 This directory contains the **SaddlePaths.jl** module, a domain-specific language (DSL) for defining and solving saddle path problems in dynamic optimization, commonly used in economic modeling.
 
+## Package Structure
+
+```
+SaddlePaths.jl/
+├── src/
+│   ├── SaddlePaths.jl         # Main module (exports public API)
+│   ├── parser.jl              # DSL Parser implementation
+│   └── computation.jl         # Numerical solver framework
+├── test/
+│   └── runtests.jl           # Test suite
+├── docs/
+│   ├── make.jl               # Documentation builder
+│   └── src/
+│       └── index.md          # Documentation homepage
+├── Project.toml              # Package metadata and dependencies
+├── Makefile                  # Build automation
+└── README.md                 # User-facing documentation
+```
+
 ## Module Structure
 
 ### SaddlePaths.jl (Main Module)
@@ -85,3 +104,22 @@ The module provides an elegant DSL that:
 - Designed to work with SpectralKit.jl for spectral methods
 - Placeholder solver implementation awaiting full numerical backend
 - Supports both symbolic and numerical solution approaches
+
+## Testing
+
+Run tests with:
+```bash
+make test
+```
+
+## Documentation
+
+Build documentation with:
+```bash
+make docs
+```
+
+## Dependencies
+
+- SpectralKit.jl (for spectral methods)
+- (Additional dependencies to be determined)
