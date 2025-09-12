@@ -292,6 +292,48 @@ With the Variables module approach, the expression pipeline is simplified to:
     user_expr |> vectorize_function_calls |> (e -> Core.eval(Variables, e))
 """
 function vectorize_function_calls(expr)
-    # For now, return the expression unchanged - will be implemented
-    return expr
+    # Base case: non-expression types pass through unchanged
+    expr isa Expr || return expr
+    
+    # Check if this is a function call that needs vectorization
+    if isfunctioncall(expr)
+        # Already vectorized (broadcasting) - recurse on arguments but preserve the dot
+        if expr.head == Symbol(".")
+            return Expr(expr.head, 
+                       vectorize_function_calls(expr.args[1]),
+                       Expr(:tuple, vectorize_function_calls.(expr.args[2].args)...))
+        end
+        
+        # Handle syntactic operators (&&, ||, etc.) - they become .&& .||
+        if expr.head in SYNTACTIC_OPERATORS
+            dotted_op = Symbol("." * String(expr.head))
+            return Expr(dotted_op, vectorize_function_calls.(expr.args)...)
+        end
+        
+        # Handle regular operators in call position: +(x, y) or x + y
+        if expr.head == :call
+            fname = expr.args[1]
+            
+            # Check if the function name is an operator that should be dotted
+            if is_operator(fname) && !is_dotted_operator(fname)
+                # Convert to dotted operator
+                dotted_fname = Symbol("." * String(fname))
+                return Expr(:call, dotted_fname, 
+                           vectorize_function_calls.(expr.args[2:end])...)
+            end
+            
+            # Regular function call f(x) becomes f.(x)
+            if fname isa Symbol && !is_operator(fname)
+                return Expr(Symbol("."), fname,
+                           Expr(:tuple, vectorize_function_calls.(expr.args[2:end])...))
+            end
+            
+            # Otherwise recurse without changing structure
+            return Expr(expr.head, fname, 
+                       vectorize_function_calls.(expr.args[2:end])...)
+        end
+    end
+    
+    # For all other expression types, just recurse on arguments
+    return Expr(expr.head, vectorize_function_calls.(expr.args)...)
 end
