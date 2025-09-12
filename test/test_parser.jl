@@ -16,14 +16,14 @@ import SaddlePaths: is_operator, is_dotted_operator, isfunctioncall, is_greek_le
         @test is_operator(:^) == true
         @test is_operator(:%) == true
         @test is_operator(:÷) == true
-        @test is_operator(:==) == true
-        @test is_operator(:!=) == true
-        @test is_operator(:<=) == true
-        @test is_operator(:>=) == true
-        @test is_operator(:<) == true
-        @test is_operator(:>) == true
-        @test is_operator(:&&) == true
-        @test is_operator(:||) == true
+        @test is_operator(:(==)) == true
+        @test is_operator(:(!=)) == true
+        @test is_operator(:(<=)) == true
+        @test is_operator(:(>=)) == true
+        @test is_operator(:(<)) == true
+        @test is_operator(:(>)) == true
+        @test is_operator(:(&&)) == true
+        @test is_operator(:(||)) == true
         
         # Test dot operator exclusion
         @test is_operator(:.) == false
@@ -47,12 +47,12 @@ import SaddlePaths: is_operator, is_dotted_operator, isfunctioncall, is_greek_le
         @test is_dotted_operator(:.*) == true
         @test is_dotted_operator(:./) == true
         @test is_dotted_operator(:.^) == true
-        @test is_dotted_operator(:.==) == true
-        @test is_dotted_operator(:.!=) == true
-        @test is_dotted_operator(:.<=) == true
-        @test is_dotted_operator(:.>=) == true
-        @test is_dotted_operator(:.<) == true
-        @test is_dotted_operator(:.>) == true
+        @test is_dotted_operator(:(.==)) == true
+        @test is_dotted_operator(:(.!=)) == true
+        @test is_dotted_operator(:(.<=)) == true
+        @test is_dotted_operator(:(.>=)) == true
+        @test is_dotted_operator(:(.<)) == true
+        @test is_dotted_operator(:(.>)) == true
         
         # Test non-dotted operators
         @test is_dotted_operator(:+) == false
@@ -61,7 +61,7 @@ import SaddlePaths: is_operator, is_dotted_operator, isfunctioncall, is_greek_le
         
         # Test non-operators
         @test is_dotted_operator(:.) == false
-        @test is_dotted_operator(:.foo) == false
+        @test is_dotted_operator(Symbol(".foo")) == false
         @test is_dotted_operator(:foo) == false
         
         # Test non-symbol inputs
